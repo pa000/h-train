@@ -1,0 +1,2 @@
+package h-raylib
+  flags: -detect-platform
