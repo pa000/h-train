@@ -1,7 +1,9 @@
 {-# OPTIONS -Wall #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
 
 module Types
@@ -9,10 +11,15 @@ module Types
     Position (..),
     Speed (..),
     Sector (..),
-    OccupiedBy (..),
+    Busy (..),
+    State (..),
+    GridPosition (..),
+    Reachable (..),
     Node (..),
     Board (..),
-    State (..),
+    Direction,
+    Clicked (..),
+    Selected (..),
     cellSize,
     initWorld,
     World,
@@ -20,21 +27,33 @@ module Types
 where
 
 import Apecs
+import Apecs.Experimental.Reactive
+import Data.Ix
 import qualified Data.Map as Map
 import Data.Sequence
 import Linear.V2
 import Raylib.Types (Vector2)
-import qualified Raylib.Types as RL
 
 cellSize :: Num p => p
-cellSize = 40
+cellSize = 30
 
-data VehicleType = MU | Loco | Car
+data VehicleType = MU | WithLoco | JustCars
 
 instance Component VehicleType where
   type Storage VehicleType = Map VehicleType
 
-newtype Position = Position (Entity, Float)
+newtype GridPosition = GridPosition (V2 Int)
+  deriving (Eq, Ord, Ix, Show)
+
+instance Component GridPosition where
+  type Storage GridPosition = Reactive (OrdMap GridPosition) (Map GridPosition)
+
+data Node = Node
+
+instance Component Node where
+  type Storage Node = Map Node
+
+newtype Position = Position Vector2
 
 instance Component Position where
   type Storage Position = Map Position
@@ -44,58 +63,58 @@ newtype Speed = Speed Float
 instance Component Speed where
   type Storage Speed = Map Speed
 
-newtype Coupled = Coupled (Seq Entity)
+data Reachable = Reachable
 
-instance Component Coupled where
-  type Storage Coupled = Map Coupled
+instance Component Reachable where
+  type Storage Reachable = Map Reachable
 
-newtype OccupiedBy = OccupiedBy Entity
+data Busy = Busy
 
-instance Component OccupiedBy where
-  type Storage OccupiedBy = Map OccupiedBy
+instance Component Busy where
+  type Storage Busy = Map Busy
 
-data Sector = Sector (V2 Int) (Seq (V2 Int)) (V2 Int)
+newtype Sector = Sector (Seq GridPosition)
 
 instance Component Sector where
   type Storage Sector = Map Sector
 
-data Node
-  = DeadEnd Entity
-  | Through Entity
-  | Semaphore Bool Entity Entity
-  | Junction [Entity] Entity Entity
-
-instance Component Node where
-  type Storage Node = Map Node
-
-newtype Board = Board (Map.Map (V2 Int) Node)
+newtype Board = Board (Map.Map GridPosition [GridPosition])
+  deriving (Semigroup, Monoid)
 
 instance Component Board where
   type Storage Board = Global Board
 
-instance Semigroup Board where
-  Board b1 <> Board b2 = Board $ Map.union b1 b2
-
-instance Monoid Board where
-  mempty = Board Map.empty
-
 data State = State
-  { buildingMode :: Bool,
-    selectedBlock :: Maybe (V2 Int)
+  { buildingMode :: Bool
   }
 
 instance Component State where
   type Storage State = Unique State
+
+type Direction = V2 Int
+
+data Clicked = Clicked
+
+instance Component Clicked where
+  type Storage Clicked = Unique Clicked
+
+data Selected = Selected
+
+instance Component Selected where
+  type Storage Selected = Unique Selected
 
 makeWorld
   "World"
   [ ''VehicleType,
     ''Position,
     ''Speed,
-    ''Coupled,
     ''Sector,
-    ''OccupiedBy,
+    ''Busy,
+    ''State,
+    ''Reachable,
+    ''GridPosition,
     ''Node,
     ''Board,
-    ''State
+    ''Clicked,
+    ''Selected
   ]

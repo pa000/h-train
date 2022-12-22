@@ -32,7 +32,10 @@ library
         linear
     other-modules:
         Rendering,
-        Types
+        Types,
+        Input,
+        Board,
+        Util
     default-language: Haskell2010
 
 executable h-train
