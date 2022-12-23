@@ -1,13 +1,9 @@
 {-# OPTIONS -Wall #-}
 
-module Rendering (render, getScreenPos) where
+module Rendering (render, getScreenPos, isVisibleOnScreen) where
 
 import Apecs
-import Apecs.Experimental.Reactive (ixLookup, withReactive)
-import Apecs.System (cmapIf)
-import Control.Exception (assert)
 import Control.Monad
-import qualified Data.Map as Map
 import Data.Sequence
 import Foreign.C (CFloat (CFloat))
 import Input (getBlockUnderCursor)
@@ -16,6 +12,7 @@ import Linear.V2 (V2 (..))
 import qualified Raylib as RL
 import qualified Raylib.Colors as RL
 import Raylib.Types (Vector2 (..))
+import qualified Raylib.Types as RL
 import Types
 import Util
 import Prelude hiding (last)
@@ -35,8 +32,22 @@ render = do
     renderReachableBlocks
     renderBuildMode
   renderSectors
+  unless (buildingMode state) $ do
+    highlightHoveredSector
 
   liftIO RL.endDrawing
+
+highlightHoveredSector :: System World ()
+highlightHoveredSector = do
+  hoveredBlock <- getBlockUnderCursor
+  hoveredSector <- getSectorContainingBlock hoveredBlock
+  forM_ hoveredSector renderHoveredSector
+
+getSectorContainingBlock :: GridPosition -> System World (Maybe Sector)
+getSectorContainingBlock block =
+  cfold
+    (\acc s@(Sector sector) -> if block `elem` sector then Just s else acc)
+    Nothing
 
 renderBlock :: GridPosition -> System World ()
 renderBlock (GridPosition (V2 x y)) = do
@@ -85,19 +96,22 @@ renderBuildMode = do
         RL.darkGray
 
 renderSectors :: System World ()
-renderSectors = cmapM_ renderSector
+renderSectors = cmapM_ (renderSector RL.white)
 
-renderSector :: Sector -> System World ()
-renderSector (Sector (prefix :|> last)) =
-  foldrM_ renderTrack last prefix
-renderSector (Sector Empty) = error "I know my invariants so this won't happen"
+renderSector :: RL.Color -> Sector -> System World ()
+renderSector color (Sector (prefix :|> last)) =
+  foldrM_ (renderTrack color) last prefix
+renderSector _ (Sector Empty) = error "I know my invariants so this won't happen"
 
-renderTrack :: GridPosition -> GridPosition -> System World GridPosition
-renderTrack (GridPosition v1) (GridPosition v2) = do
+renderHoveredSector :: Sector -> System World ()
+renderHoveredSector = renderSector RL.red
+
+renderTrack :: RL.Color -> GridPosition -> GridPosition -> System World GridPosition
+renderTrack color (GridPosition v1) (GridPosition v2) = do
   liftIO $ do
-    RL.drawLineEx (getScreenPos v1) (getScreenPos v2) 3 RL.white
-    RL.drawCircleV (getScreenPos v1) 1.5 RL.white
-    RL.drawCircleV (getScreenPos v2) 1.5 RL.white
+    RL.drawLineEx (getScreenPos v1) (getScreenPos v2) 3 color
+    RL.drawCircleV (getScreenPos v1) 1.5 color
+    RL.drawCircleV (getScreenPos v2) 1.5 color
     return $ GridPosition v1
 
 getScreenPos :: V2 Int -> Vector2
@@ -109,3 +123,10 @@ getScreenPos (V2 x y) =
 renderReachableBlocks :: System World ()
 renderReachableBlocks =
   cmapM_ (\(Reachable, Node, pos) -> renderBlock pos)
+
+isVisibleOnScreen :: GridPosition -> System World Bool
+isVisibleOnScreen (GridPosition pos) = do
+  h <- liftIO RL.getScreenHeight
+  w <- liftIO RL.getScreenWidth
+  let (Vector2 (CFloat x) (CFloat y)) = getScreenPos pos
+  return $ 0 <= x && x < fromIntegral w && 0 <= y && y < fromIntegral h

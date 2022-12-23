@@ -8,18 +8,12 @@
 
 module Lib (main) where
 
-import Apecs (Proxy (..), System, exists, get, global, liftIO, newEntity, newEntity_, runSystem, set)
-import Apecs.Experimental.Reactive
+import Apecs (Proxy (..), System, exists, global, liftIO, newEntity_, runSystem, set)
 import Board
-import Control.Monad (foldM_, guard, unless, when)
-import qualified Data.Map as Map
-import Data.Maybe (isJust)
-import Data.Sequence (Seq (Empty), fromList)
-import Input (getBlockUnderCursor, handleInput)
-import Linear.V2
+import Control.Monad (unless, when)
+import Data.Sequence (fromList)
+import Input (handleInput)
 import qualified Raylib as RL
-import Raylib.Types (Vector2 (..))
-import qualified Raylib.Types as RL
 import Rendering (render)
 import Types
 import Util
@@ -70,20 +64,16 @@ handleClickedBlock = do
         else do
           clickedEntity <- getNodeEntityAtPosition clickedPos
           isReachable <- exists clickedEntity (Proxy @Reachable)
-          if isReachable
-            then do
-              clearReachableNodes
-              makeSector selectedPos clickedPos
-              setSelectedBlock clickedPos
-              markNodesReachableFrom clickedPos
-            else do
-              clearReachableNodes
-              setSelectedBlock clickedPos
-              markNodesReachableFrom clickedPos
+
+          clearReachableNodes
+          setSelectedBlock clickedPos
+          markNodesReachableFrom clickedPos
+
+          when isReachable $ makeSector selectedPos clickedPos
 
 makeSector :: GridPosition -> GridPosition -> System World ()
 makeSector from to = do
-  nodesInDir <- getNodesInDir from (getNormalizedDir from to)
+  nodesInDir <- getVisibleNodesInDir from (getNormalizedDir from to)
   let nodesInBetween = from : takeWhileInclusive (/= to) nodesInDir
   newEntity_ $ Sector (fromList nodesInBetween)
 

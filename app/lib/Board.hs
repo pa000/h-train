@@ -3,51 +3,47 @@
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
 
-module Board (
-  markNodesReachableFrom,
-  clearReachableNodes,
-  getNodesInDir,
-  getNormalizedDir,
-  getNeighbours,
-  addNeighbours
-)
+module Board
+  ( markNodesReachableFrom,
+    clearReachableNodes,
+    getVisibleNodesInDir,
+    getNormalizedDir,
+    getNeighbours,
+    addNeighbours,
+  )
 where
 
 import Apecs
-import Apecs.Experimental.Reactive (ixLookup, ordLookup, withReactive)
-import Control.Monad
-import Data.Foldable
+import Data.List
 import qualified Data.Map as Map
-import Data.Traversable (for)
-import Foreign.C
 import Linear.V2
-import qualified Raylib as RL
-import Raylib.Types
 import Rendering
 import Types
-import Data.List
 import Util
 
 getNeighbours :: Board -> GridPosition -> [GridPosition]
 getNeighbours (Board board) pos = Map.findWithDefault [] pos board
 
 addNeighbours :: GridPosition -> [GridPosition] -> System World ()
-addNeighbours node neighbours = do
-  Board board <- get global
-  let board' = Map.insertWith (++) node neighbours board
-  modify global $ \(Board _) -> Board board'
+addNeighbours node neighbours =
+  global $~ \(Board board) ->
+    Board $ Map.insertWith (++) node neighbours board
 
-getNodesInDir :: GridPosition -> Direction -> System World [GridPosition]
-getNodesInDir start dir = do
+isNodeEmpty :: Board -> GridPosition -> Bool
+isNodeEmpty board node = null $ getNeighbours board node
+
+getVisibleNodesInDir :: GridPosition -> Direction -> System World [GridPosition]
+getVisibleNodesInDir start dir = do
   let next = moveInDir start dir
   visible <- isVisibleOnScreen next
   if visible
     then do
-      rest <- getNodesInDir next dir
+      rest <- getVisibleNodesInDir next dir
       return $ next : rest
     else return []
 
 normalizeDir :: Direction -> Direction
+normalizeDir (V2 0 0) = V2 0 0
 normalizeDir (V2 dx 0) = V2 (dx `div` abs dx) 0
 normalizeDir (V2 0 dy) = V2 0 (dy `div` abs dy)
 normalizeDir (V2 dx dy) = V2 (dx `div` abs dx) (dy `div` abs dy)
@@ -57,36 +53,38 @@ getNormalizedDir (GridPosition (V2 fromX fromY)) (GridPosition (V2 toX toY)) =
   normalizeDir (V2 (toX - fromX) (toY - fromY))
 
 getNodesReachableFrom :: GridPosition -> System World [GridPosition]
-getNodesReachableFrom startPos = do
+getNodesReachableFrom startPos =
   concat <$> mapM (getNodesReachableFromInDir startPos) allDirections
 
 getNodesReachableFromInDir ::
   GridPosition -> Direction -> System World [GridPosition]
 getNodesReachableFromInDir startPos dir = do
   board <- get global
-  nodesInDir <- getNodesInDir startPos dir
-  return $ takeWhileInclusive (isReachable board) nodesInDir
-    \\ getNeighbours board startPos
-  where
-    isReachable board node =
-      let neighbours = getNeighbours board node
-       in null neighbours -- || any (isAngleLegal startPos node) neighbours
-    isAngleLegal start middle end =
-      let dirStart = getNormalizedDir middle start
-          dirEnd = getNormalizedDir end middle
-       in elem dirStart (getLegalDirs dirEnd)
-    getLegalDirs dir =
-      case dir of
-        V2 0 _ -> [V2 0 dy | dy <- [-1 .. 1]]
-        V2 _ 0 -> [V2 dx 0 | dx <- [-1 .. 1]]
-        V2 dx dy -> [V2 dx dy, V2 0 dy, V2 dx 0]
+  nodesInDir <- getVisibleNodesInDir startPos dir
+  let (nodesBetween, nodesLeft) = span (isNodeEmpty board) nodesInDir
+  case nodesLeft of
+    [] -> return $ nodesBetween \\ getNeighbours board startPos
+    nodeLeft : _ -> do
+      let reachableNodes
+            | any (isAngleLegal startPos nodeLeft) (getNeighbours board nodeLeft) =
+              nodeLeft : nodesBetween
+            | otherwise =
+              nodesBetween
+      return $ reachableNodes \\ getNeighbours board startPos
 
-isVisibleOnScreen :: GridPosition -> System World Bool
-isVisibleOnScreen (GridPosition pos) = do
-  h <- liftIO RL.getScreenHeight
-  w <- liftIO RL.getScreenWidth
-  let (Vector2 (CFloat x) (CFloat y)) = getScreenPos pos
-  return $ 0 <= x && x < fromIntegral w && 0 <= y && y < fromIntegral h
+isAngleLegal :: GridPosition -> GridPosition -> GridPosition -> Bool
+isAngleLegal start middle end =
+  let dirStart = getNormalizedDir middle start
+      dirEnd = getNormalizedDir end middle
+   in elem dirEnd (getLegalDirs dirStart)
+        || elem dirStart (getLegalDirs dirEnd)
+
+getLegalDirs :: Direction -> [Direction]
+getLegalDirs dir =
+  case dir of
+    V2 0 _ -> [V2 0 dy | dy <- [-1 .. 1]]
+    V2 _ 0 -> [V2 dx 0 | dx <- [-1 .. 1]]
+    V2 dx dy -> [V2 dx dy, V2 0 dy, V2 dx 0]
 
 markNodesReachableFrom :: GridPosition -> System World ()
 markNodesReachableFrom startPos = do

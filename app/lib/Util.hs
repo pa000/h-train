@@ -17,10 +17,6 @@ where
 import Apecs
 import Apecs.Experimental.Reactive
 import Control.Monad (void)
-import Foreign.C (CFloat (CFloat))
-import Linear (V2)
-import Linear.V2 (V2 (..))
-import Raylib.Types (Vector2 (..))
 import Types
 
 foldrM :: (Foldable t, Monad m) => (a -> b -> m b) -> b -> t a -> m b
