@@ -20,6 +20,7 @@ module Types
     Direction,
     Clicked (..),
     Selected (..),
+    NodeType (..),
     cellSize,
     initWorld,
     World,
@@ -103,6 +104,11 @@ data Selected = Selected
 instance Component Selected where
   type Storage Selected = Unique Selected
 
+data NodeType = Empty | DeadEnd | Through | Junction
+
+instance Component NodeType where
+  type Storage NodeType = Map NodeType
+
 makeWorld
   "World"
   [ ''VehicleType,
@@ -116,5 +122,6 @@ makeWorld
     ''Node,
     ''Board,
     ''Clicked,
-    ''Selected
+    ''Selected,
+    ''NodeType
   ]

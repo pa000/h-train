@@ -13,7 +13,7 @@ import qualified Raylib as RL
 import qualified Raylib.Colors as RL
 import Raylib.Types (Vector2 (..))
 import qualified Raylib.Types as RL
-import Types
+import Types hiding (Empty)
 import Util
 import Prelude hiding (last)
 
@@ -122,7 +122,7 @@ getScreenPos (V2 x y) =
 
 renderReachableBlocks :: System World ()
 renderReachableBlocks =
-  cmapM_ (\(Reachable, Node, pos) -> renderBlock pos)
+  cmapM_ $ \(Reachable, Node, pos) -> renderBlock pos
 
 isVisibleOnScreen :: GridPosition -> System World Bool
 isVisibleOnScreen (GridPosition pos) = do

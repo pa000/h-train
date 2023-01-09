@@ -100,7 +100,7 @@ allDirections =
   [V2 dx dy | dx <- [-1 .. 1], dy <- [-1 .. 1], dx /= 0 || dy /= 0]
 
 clearReachableNodes :: System World ()
-clearReachableNodes = cmap (\Reachable -> Not @Reachable)
+clearReachableNodes = cmap $ \Reachable -> Not @Reachable
 
 moveInDir :: GridPosition -> Direction -> GridPosition
 moveInDir (GridPosition (V2 x y)) (V2 dx dy) =

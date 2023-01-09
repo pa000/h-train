@@ -8,9 +8,9 @@
 
 module Lib (main) where
 
-import Apecs (Proxy (..), System, exists, global, liftIO, newEntity_, runSystem, set)
+import Apecs
 import Board
-import Control.Monad (unless, when)
+import Control.Monad (foldM_, unless, when)
 import Data.Sequence (fromList)
 import Input (handleInput)
 import qualified Raylib as RL
@@ -65,23 +65,37 @@ handleClickedBlock = do
           clickedEntity <- getNodeEntityAtPosition clickedPos
           isReachable <- exists clickedEntity (Proxy @Reachable)
 
+          when isReachable $ makeSector selectedPos clickedPos
+
           clearReachableNodes
           setSelectedBlock clickedPos
           markNodesReachableFrom clickedPos
 
-          when isReachable $ makeSector selectedPos clickedPos
-
 makeSector :: GridPosition -> GridPosition -> System World ()
 makeSector from to = do
   nodesInDir <- getVisibleNodesInDir from (getNormalizedDir from to)
-  let nodesInBetween = from : takeWhileInclusive (/= to) nodesInDir
-  newEntity_ $ Sector (fromList nodesInBetween)
+  let nodesInBetween = takeWhileInclusive (/= to) nodesInDir
+  newEntity_ $ Sector (fromList $ from : nodesInBetween)
 
-  updateNeighbours nodesInBetween
+  foldM_ makeTrack from nodesInBetween
   where
-    updateNeighbours [] = return ()
-    updateNeighbours [_] = return ()
-    updateNeighbours (first : second : rest) = do
-      addNeighbours second [first]
-      addNeighbours first [second]
-      updateNeighbours (second : rest)
+    makeTrack :: GridPosition -> GridPosition -> System World GridPosition
+    makeTrack from to = do
+      addNeighbours from [to]
+      updateNode from
+      addNeighbours to [from]
+      updateNode to
+      return to
+
+updateNode :: GridPosition -> System World ()
+updateNode pos = do
+  nodeEntity <- getNodeEntityAtPosition pos
+  board <- get global
+  let neighbours = getNeighbours board pos
+  nodeEntity $= case length neighbours of
+    0 -> Empty
+    1 -> DeadEnd
+    2 -> Through
+    3 -> Junction
+    4 -> Junction
+    _ -> Junction
