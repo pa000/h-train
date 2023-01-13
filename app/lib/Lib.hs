@@ -15,6 +15,7 @@ import Data.Sequence (fromList)
 import Input (handleInput)
 import qualified Raylib as RL
 import Rendering (render)
+import Train (makeTrain, moveTrains)
 import Types
 import Util
 import Prelude hiding (last)
@@ -46,6 +47,7 @@ update :: System World ()
 update = do
   handleInput
   handleClickedBlock
+  moveTrains
 
 handleClickedBlock :: System World ()
 handleClickedBlock = do
@@ -77,25 +79,20 @@ makeSector from to = do
   let nodesInBetween = takeWhileInclusive (/= to) nodesInDir
   newEntity_ $ Sector (fromList $ from : nodesInBetween)
 
+  _ <- makeTrain $ Sector (fromList $ from : nodesInBetween)
   foldM_ makeTrack from nodesInBetween
   where
     makeTrack :: GridPosition -> GridPosition -> System World GridPosition
-    makeTrack from to = do
-      addNeighbours from [to]
-      updateNode from
-      addNeighbours to [from]
-      updateNode to
-      return to
+    makeTrack pos pos' = do
+      connect pos pos'
+      return pos'
 
-updateNode :: GridPosition -> System World ()
-updateNode pos = do
+connect :: GridPosition -> GridPosition -> System World ()
+connect pos pos' = do
   nodeEntity <- getNodeEntityAtPosition pos
-  board <- get global
-  let neighbours = getNeighbours board pos
-  nodeEntity $= case length neighbours of
-    0 -> Empty
-    1 -> DeadEnd
-    2 -> Through
-    3 -> Junction
-    4 -> Junction
-    _ -> Junction
+  nodeEntity' <- getNodeEntityAtPosition pos'
+  ConnectedTo neighbours <- get nodeEntity
+  ConnectedTo neighbours' <- get nodeEntity'
+  nodeEntity $= ConnectedTo (pos' : neighbours)
+  nodeEntity' $= ConnectedTo (pos : neighbours')
+  return ()

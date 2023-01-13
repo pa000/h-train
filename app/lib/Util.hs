@@ -4,19 +4,20 @@
 module Util
   ( foldrM,
     foldrM_,
-    getNodeEntityAtPosition,
+    spanM,
     getSelectedBlock,
     setSelectedBlock,
     clearSelectedBlock,
     getClickedBlock,
     setClickedBlock,
+    getNodeEntityAtPosition,
     takeWhileInclusive,
   )
 where
 
 import Apecs
 import Apecs.Experimental.Reactive
-import Control.Monad (void)
+import Control.Monad
 import Types
 
 foldrM :: (Foldable t, Monad m) => (a -> b -> m b) -> b -> t a -> m b
@@ -29,7 +30,7 @@ getNodeEntityAtPosition :: GridPosition -> System World Entity
 getNodeEntityAtPosition pos = do
   entitiesAtNodePos <- withReactive $ ordLookup pos
   case entitiesAtNodePos of
-    [] -> newEntity (Node, pos)
+    [] -> newEntity (Node, ConnectedTo [], pos)
     [e] -> return e
     _ : _ -> error "Very many entities"
 
@@ -54,3 +55,16 @@ getClickedBlock = cfold (\_ (Clicked, pos) -> Just pos) Nothing
 
 takeWhileInclusive :: (a -> Bool) -> [a] -> [a]
 takeWhileInclusive p = foldr (\x ys -> if p x then x : ys else [x]) []
+
+spanM :: Monad m => (a -> m Bool) -> [a] -> m ([a], [a])
+spanM _ [] = return ([], [])
+spanM f (x : xs) = do
+  b <- f x
+  if b
+    then do
+      (rs, ls) <- spanM f xs
+      return (x : rs, ls)
+    else return ([], x : xs)
+
+-- anyM :: (Monad m, Foldable t) => (a -> m Bool) -> t a -> m Bool
+-- anyM _ []

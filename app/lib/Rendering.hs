@@ -13,6 +13,7 @@ import qualified Raylib as RL
 import qualified Raylib.Colors as RL
 import Raylib.Types (Vector2 (..))
 import qualified Raylib.Types as RL
+import Train (getPositionOnGrid, getRotation)
 import Types hiding (Empty)
 import Util
 import Prelude hiding (last)
@@ -35,7 +36,20 @@ render = do
   unless (buildingMode state) $ do
     highlightHoveredSector
 
+  renderTrains
+
   liftIO RL.endDrawing
+
+renderTrains :: System World ()
+renderTrains = cmapM_ renderTrain
+
+renderTrain :: (Train, Position) -> System World ()
+renderTrain (_, pos) = do
+  let positionOnGrid = Train.getPositionOnGrid pos
+  let rotation = Train.getRotation pos
+  let (Vector2 x y) = getScreenPosF positionOnGrid
+  let rectangle = RL.Rectangle x y 20.0 10.0
+  liftIO $ RL.drawRectanglePro rectangle (Vector2 0 5) rotation RL.red
 
 highlightHoveredSector :: System World ()
 highlightHoveredSector = do
@@ -119,6 +133,10 @@ getScreenPos (V2 x y) =
   Vector2
     (CFloat . fromIntegral $ (x + 1) * cellSize)
     (CFloat . fromIntegral $ (y + 1) * cellSize)
+
+getScreenPosF :: V2 Float -> Vector2
+getScreenPosF (V2 x y) =
+  Vector2 (CFloat (x + 1) * cellSize) (CFloat (y + 1) * cellSize)
 
 renderReachableBlocks :: System World ()
 renderReachableBlocks =

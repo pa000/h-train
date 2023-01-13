@@ -5,9 +5,13 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
+{-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
+
+{-# HLINT ignore "Use newtype instead of data" #-}
 
 module Types
   ( VehicleType (..),
+    Train (..),
     Position (..),
     Speed (..),
     Sector (..),
@@ -16,11 +20,10 @@ module Types
     GridPosition (..),
     Reachable (..),
     Node (..),
-    Board (..),
     Direction,
     Clicked (..),
     Selected (..),
-    NodeType (..),
+    ConnectedTo (..),
     cellSize,
     initWorld,
     World,
@@ -54,7 +57,17 @@ data Node = Node
 instance Component Node where
   type Storage Node = Map Node
 
-newtype Position = Position Vector2
+data ConnectedTo = ConnectedTo [GridPosition]
+
+data Train = Train
+
+instance Component Train where
+  type Storage Train = Map Train
+
+instance Component ConnectedTo where
+  type Storage ConnectedTo = Map ConnectedTo
+
+data Position = Position Sector Float
 
 instance Component Position where
   type Storage Position = Map Position
@@ -79,12 +92,6 @@ newtype Sector = Sector (Seq GridPosition)
 instance Component Sector where
   type Storage Sector = Map Sector
 
-newtype Board = Board (Map.Map GridPosition [GridPosition])
-  deriving (Semigroup, Monoid)
-
-instance Component Board where
-  type Storage Board = Global Board
-
 data State = State
   { buildingMode :: Bool
   }
@@ -104,11 +111,6 @@ data Selected = Selected
 instance Component Selected where
   type Storage Selected = Unique Selected
 
-data NodeType = Empty | DeadEnd | Through | Junction
-
-instance Component NodeType where
-  type Storage NodeType = Map NodeType
-
 makeWorld
   "World"
   [ ''VehicleType,
@@ -120,8 +122,8 @@ makeWorld
     ''Reachable,
     ''GridPosition,
     ''Node,
-    ''Board,
     ''Clicked,
     ''Selected,
-    ''NodeType
+    ''ConnectedTo,
+    ''Train
   ]
