@@ -23,6 +23,7 @@ module Types
     Direction,
     Clicked (..),
     Selected (..),
+    Hovered (..),
     ConnectedTo (..),
     cellSize,
     initWorld,
@@ -67,7 +68,7 @@ instance Component Train where
 instance Component ConnectedTo where
   type Storage ConnectedTo = Map ConnectedTo
 
-data Position = Position Sector Float
+data Position = Position !Sector !Float
 
 instance Component Position where
   type Storage Position = Map Position
@@ -111,6 +112,11 @@ data Selected = Selected
 instance Component Selected where
   type Storage Selected = Unique Selected
 
+data Hovered = Hovered
+
+instance Component Hovered where
+  type Storage Hovered = Unique Hovered
+
 makeWorld
   "World"
   [ ''VehicleType,
@@ -125,5 +131,6 @@ makeWorld
     ''Clicked,
     ''Selected,
     ''ConnectedTo,
-    ''Train
+    ''Train,
+    ''Hovered
   ]

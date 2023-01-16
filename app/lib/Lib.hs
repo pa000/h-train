@@ -3,16 +3,16 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
 
 module Lib (main) where
 
 import Apecs
-import Board
-import Control.Monad (foldM_, unless, when)
+import Control.Monad.Extra
 import Data.Sequence (fromList)
+import qualified Entity
 import Input (handleInput)
+import qualified Node
 import qualified Raylib as RL
 import Rendering (render)
 import Train (makeTrain, moveTrains)
@@ -51,48 +51,53 @@ update = do
 
 handleClickedBlock :: System World ()
 handleClickedBlock = do
-  clickedBlock <- getClickedBlock
-  selectedBlock <- getSelectedBlock
+  clickedBlock <- Entity.getClicked
+  selectedBlock <- Entity.getSelected
   case (clickedBlock, selectedBlock) of
-    (Nothing, Nothing) -> clearReachableNodes
-    (Just pos, Nothing) -> do
-      clearReachableNodes
-      setSelectedBlock pos
-      markNodesReachableFrom pos
+    (Nothing, Nothing) -> Node.clearReachable
+    (Just clickedEntity, Nothing) -> do
+      Node.clearReachable
+      Entity.setSelected clickedEntity
+      Node.markReachableFrom clickedEntity
     (Nothing, Just _) -> return ()
-    (Just clickedPos, Just selectedPos) -> do
-      if clickedPos == selectedPos
-        then clearSelectedBlock
+    (Just clickedEntity, Just selectedEntity) -> do
+      if clickedEntity == selectedEntity
+        then Entity.clearSelected
         else do
-          clickedEntity <- getNodeEntityAtPosition clickedPos
-          isReachable <- exists clickedEntity (Proxy @Reachable)
+          whenM (Entity.isReachable clickedEntity) $
+            makeSector selectedEntity clickedEntity
 
-          when isReachable $ makeSector selectedPos clickedPos
+          Node.clearReachable
+          Entity.setSelected clickedEntity
+          Node.markReachableFrom clickedEntity
 
-          clearReachableNodes
-          setSelectedBlock clickedPos
-          markNodesReachableFrom clickedPos
+makeSector :: Entity -> Entity -> System World ()
+makeSector startNode endNode = do
+  startPos <- Entity.getPosition startNode
+  endPos <- Entity.getPosition endNode
+  nodesInDir <-
+    Node.getVisibleFromInDir
+      startNode
+      (Node.getNormalizedDir startPos endPos)
+  let nodesInBetween = takeWhileInclusive (/= endNode) nodesInDir
+  nodesPositions <- mapM Entity.getPosition (startNode : nodesInBetween)
+  newEntity_ $ Sector (fromList nodesPositions)
 
-makeSector :: GridPosition -> GridPosition -> System World ()
-makeSector from to = do
-  nodesInDir <- getVisibleNodesInDir from (getNormalizedDir from to)
-  let nodesInBetween = takeWhileInclusive (/= to) nodesInDir
-  newEntity_ $ Sector (fromList $ from : nodesInBetween)
-
-  _ <- makeTrain $ Sector (fromList $ from : nodesInBetween)
-  foldM_ makeTrack from nodesInBetween
+  foldM_ makeTrack startNode nodesInBetween
   where
-    makeTrack :: GridPosition -> GridPosition -> System World GridPosition
-    makeTrack pos pos' = do
-      connect pos pos'
-      return pos'
+    -- _ <- makeTrain $ Sector (fromList $ from : nodesInBetween)
 
-connect :: GridPosition -> GridPosition -> System World ()
-connect pos pos' = do
-  nodeEntity <- getNodeEntityAtPosition pos
-  nodeEntity' <- getNodeEntityAtPosition pos'
-  ConnectedTo neighbours <- get nodeEntity
-  ConnectedTo neighbours' <- get nodeEntity'
-  nodeEntity $= ConnectedTo (pos' : neighbours)
-  nodeEntity' $= ConnectedTo (pos : neighbours')
+    makeTrack :: Entity -> Entity -> System World Entity
+    makeTrack node node' = do
+      connect node node'
+      return node'
+
+connect :: Entity -> Entity -> System World ()
+connect nodeEntity nodeEntity' = do
+  pos' <- Entity.getPosition nodeEntity'
+  nodeEntity $~ \(ConnectedTo neighbours) -> ConnectedTo $ pos' : neighbours
+
+  pos <- Entity.getPosition nodeEntity
+  nodeEntity' $~ \(ConnectedTo neighbours') -> ConnectedTo $ pos : neighbours'
+
   return ()

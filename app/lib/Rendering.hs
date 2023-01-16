@@ -4,9 +4,11 @@ module Rendering (render, getScreenPos, isVisibleOnScreen) where
 
 import Apecs
 import Control.Monad
+import Data.Foldable
+import Data.Maybe (fromJust)
 import Data.Sequence
+import qualified Entity
 import Foreign.C (CFloat (CFloat))
-import Input (getBlockUnderCursor)
 import Linear (V2)
 import Linear.V2 (V2 (..))
 import qualified Raylib as RL
@@ -14,8 +16,7 @@ import qualified Raylib.Colors as RL
 import Raylib.Types (Vector2 (..))
 import qualified Raylib.Types as RL
 import Train (getPositionOnGrid, getRotation)
-import Types hiding (Empty)
-import Util
+import Types
 import Prelude hiding (last)
 
 render :: System World ()
@@ -28,9 +29,9 @@ render = do
 
   when (buildingMode state) $ do
     renderHoveredBlock
-    selectedBlock <- getSelectedBlock
-    maybe (return ()) renderBlock selectedBlock
-    renderReachableBlocks
+    selectedNode <- Entity.getSelected
+    maybe (return ()) renderNode selectedNode
+    renderReachableNodes
     renderBuildMode
   renderSectors
   unless (buildingMode state) $ do
@@ -53,9 +54,13 @@ renderTrain (_, pos) = do
 
 highlightHoveredSector :: System World ()
 highlightHoveredSector = do
-  hoveredBlock <- getBlockUnderCursor
-  hoveredSector <- getSectorContainingBlock hoveredBlock
-  forM_ hoveredSector renderHoveredSector
+  maybeHoveredBlock <- Entity.getHovered
+  case maybeHoveredBlock of
+    Nothing -> return ()
+    Just hoveredBlock -> do
+      hoveredSector <-
+        Entity.getPosition hoveredBlock >>= getSectorContainingBlock
+      forM_ hoveredSector renderHoveredSector
 
 getSectorContainingBlock :: GridPosition -> System World (Maybe Sector)
 getSectorContainingBlock block =
@@ -63,8 +68,9 @@ getSectorContainingBlock block =
     (\acc s@(Sector sector) -> if block `elem` sector then Just s else acc)
     Nothing
 
-renderBlock :: GridPosition -> System World ()
-renderBlock (GridPosition (V2 x y)) = do
+renderNode :: Entity -> System World ()
+renderNode nodeEntity = do
+  (GridPosition (V2 x y)) <- Entity.getPosition nodeEntity
   liftIO $ do
     RL.drawRectangle
       (x * cellSize + cellSize `div` 2)
@@ -75,11 +81,16 @@ renderBlock (GridPosition (V2 x y)) = do
 
 renderHoveredBlock :: System World ()
 renderHoveredBlock = do
-  GridPosition (V2 hoveredBlockX hoveredBlockY) <- getBlockUnderCursor
-  liftIO $ do
-    let x = hoveredBlockX * cellSize + cellSize `div` 2
-    let y = hoveredBlockY * cellSize + cellSize `div` 2
-    RL.drawRectangle x y cellSize cellSize RL.gray
+  maybeHoveredNode <- Entity.getHovered
+  case maybeHoveredNode of
+    Nothing -> return ()
+    Just hoveredNode -> do
+      GridPosition (V2 hoveredBlockX hoveredBlockY) <-
+        Entity.getPosition hoveredNode
+      liftIO $ do
+        let x = hoveredBlockX * cellSize + cellSize `div` 2
+        let y = hoveredBlockY * cellSize + cellSize `div` 2
+        RL.drawRectangle x y cellSize cellSize RL.gray
 
 renderBuildMode :: System World ()
 renderBuildMode = do
@@ -113,8 +124,9 @@ renderSectors :: System World ()
 renderSectors = cmapM_ (renderSector RL.white)
 
 renderSector :: RL.Color -> Sector -> System World ()
-renderSector color (Sector (prefix :|> last)) =
-  foldrM_ (renderTrack color) last prefix
+renderSector color (Sector (prefix :|> last)) = do
+  _ <- foldrM (renderTrack color) last prefix
+  return ()
 renderSector _ (Sector Empty) = error "I know my invariants so this won't happen"
 
 renderHoveredSector :: Sector -> System World ()
@@ -138,9 +150,9 @@ getScreenPosF :: V2 Float -> Vector2
 getScreenPosF (V2 x y) =
   Vector2 (CFloat (x + 1) * cellSize) (CFloat (y + 1) * cellSize)
 
-renderReachableBlocks :: System World ()
-renderReachableBlocks =
-  cmapM_ $ \(Reachable, Node, pos) -> renderBlock pos
+renderReachableNodes :: System World ()
+renderReachableNodes =
+  cmapM_ $ \(Reachable, Node, pos) -> renderNode pos
 
 isVisibleOnScreen :: GridPosition -> System World Bool
 isVisibleOnScreen (GridPosition pos) = do

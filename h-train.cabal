@@ -30,14 +30,16 @@ library
         h-raylib,
         apecs,
         linear,
-        extra
+        extra,
+        monadlist
     other-modules:
         Rendering,
         Types,
         Input,
-        Board,
         Util,
-        Train
+        Train,
+        Node,
+        Entity
     default-language: Haskell2010
 
 executable h-train

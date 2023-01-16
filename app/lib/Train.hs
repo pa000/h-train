@@ -2,8 +2,7 @@
 module Train where
 
 import Apecs
-import Data.Foldable (Foldable (fold))
-import Data.Foldable.Extra
+import Data.Foldable
 import Data.Sequence
 import Linear
 import qualified Raylib as RL
@@ -36,7 +35,7 @@ moveTrain (Train, Position sector progress, Speed speed) = do
   return $ Position sector (progress + speed * dt)
 
 toFloatVector :: (Integral a1, Num a2) => V2 a1 -> V2 a2
-toFloatVector (V2 x y) = V2 (fromIntegral x) (fromIntegral y)
+toFloatVector = fmap fromIntegral
 
 getPositionOnGrid :: Position -> V2 Float
 getPositionOnGrid (Position (Sector Empty) _) = 0.0
