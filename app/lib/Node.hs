@@ -7,6 +7,7 @@ import Apecs
 import Apecs.Experimental.Reactive
 import Control.Monad.Extra (concatMapM, (&&^))
 import Control.Monad.ListM
+import qualified Direction
 import qualified Entity
 import Linear
 import Rendering
@@ -91,32 +92,19 @@ isDirectedConnectionToNonEmptyNodeLegal startNode endNode = do
   endNeighbours <- getNeighbours endNode
   if startNode `elem` endNeighbours || length endNeighbours >= 4
     then return False
-    else anyM (isAngleLegal startNode endNode) endNeighbours
+    else anyM (isTurnLegal startNode endNode) endNeighbours
 
-isAngleLegal :: Entity -> Entity -> Entity -> System World Bool
-isAngleLegal startNode middleNode endNode = do
+isTurnLegal :: Entity -> Entity -> Entity -> System World Bool
+isTurnLegal startNode middleNode endNode = do
   startPos <- Entity.getPosition startNode
   middlePos <- Entity.getPosition middleNode
   endPos <- Entity.getPosition endNode
-  let dirStart = getNormalizedDir middlePos startPos
-      dirEnd = getNormalizedDir endPos middlePos
-  return $
-    elem dirStart (getLegalTurns dirEnd) || elem dirEnd (getLegalTurns dirStart)
-
-getNormalizedDir :: GridPosition -> GridPosition -> Direction
-getNormalizedDir (GridPosition (V2 fromX fromY)) (GridPosition (V2 toX toY)) =
-  normalizeDir (V2 (toX - fromX) (toY - fromY))
+  let dirStart = Direction.getNormalized startPos middlePos
+      dirEnd = Direction.getNormalized middlePos endPos
+  return $ dirEnd `elem` getLegalTurns dirStart
 
 getLegalTurns :: Direction -> [Direction]
-getLegalTurns dir =
-  case dir of
-    V2 0 0 -> []
-    V2 0 _ -> [V2 0 dy | dy <- [-1 .. 1]]
-    V2 _ 0 -> [V2 dx 0 | dx <- [-1 .. 1]]
-    V2 dx dy -> [V2 dx dy, V2 0 dy, V2 dx 0]
-
-normalizeDir :: Direction -> Direction
-normalizeDir (V2 0 0) = V2 0 0
-normalizeDir (V2 dx 0) = V2 (dx `div` abs dx) 0
-normalizeDir (V2 0 dy) = V2 0 (dy `div` abs dy)
-normalizeDir (V2 dx dy) = V2 (dx `div` abs dx) (dy `div` abs dy)
+getLegalTurns (V2 0 0) = []
+getLegalTurns (V2 0 dy) = [V2 dx dy | dx <- [-1 .. 1]]
+getLegalTurns (V2 dx 0) = [V2 dx dy | dy <- [-1 .. 1]]
+getLegalTurns (V2 dx dy) = [V2 dx dy, V2 0 dy, V2 dx 0]

@@ -31,15 +31,18 @@ library
         apecs,
         linear,
         extra,
-        monadlist
+        monadlist,
+        mtl
     other-modules:
         Rendering,
         Types,
         Input,
-        Util,
         Train,
         Node,
-        Entity
+        Entity,
+        Direction,
+        Position,
+        PositionState
     default-language: Haskell2010
 
 executable h-train

@@ -1,70 +1,55 @@
 {-# OPTIONS -Wall #-}
+{-# LANGUAGE TypeApplications #-}
+
 module Train where
 
 import Apecs
 import Data.Foldable
-import Data.Sequence
-import Linear
+import qualified Entity
+import qualified Linear
+import qualified Node
 import qualified Raylib as RL
-import Raylib.Types
 import Types
 
 makeTrain :: Sector -> System World Entity
-makeTrain sector = do
-  newEntity (Train, Position sector 0.0, Speed 0.7)
-
-sectorLength :: Sector -> Float
-sectorLength (Sector Empty) = 0.0
-sectorLength (Sector ((GridPosition first) :<| rest)) =
-  fst $
-    foldl'
-      ( \(len, prevPos) (GridPosition nodePos) ->
-          ( len + Linear.distance (toFloatVector prevPos) (toFloatVector nodePos),
-            nodePos
-          )
-      )
-      (0.0, first)
-      rest
+makeTrain (Sector sector) = do
+  newEntity (Train, Position (toList sector) 0.0, Speed 0.7)
 
 moveTrains :: System World ()
 moveTrains = cmapM moveTrain
 
-moveTrain :: (Train, Position, Speed) -> System World Position
-moveTrain (Train, Position sector progress, Speed speed) = do
-  dt <- liftIO RL.getFrameTime
-  return $ Position sector (progress + speed * dt)
+moveTrain :: (Train, Position, Speed) -> System World (Either Position (Not (Train, Position, Speed)))
+moveTrain (Train, Position [] _, _) = return $ Left $ Position [] 0
+moveTrain (Train, Position [_] _, _) = return $ Left $ Position [] 0
+moveTrain (Train, Position [currPos, nextPos] progress, Speed speed) = do
+  nextNode <- Node.at nextPos
+  currNode <- Node.at currPos
+  neighbours <- Node.getNeighbours nextNode
+  case find (/= currNode) neighbours of
+    Nothing -> return $ Right $ Not @(Train, Position, Speed)
+    Just neighbourNode -> do
+      neighbourPosition <- Entity.getPosition neighbourNode
+      moveTrain (Train, Position [currPos, nextPos, neighbourPosition] progress, Speed speed)
+moveTrain
+  ( Train,
+    Position (GridPosition currPos : GridPosition nextPos : rest) progress,
+    Speed speed
+    ) = do
+    dt <- liftIO RL.getFrameTime
+    let distance = Linear.distance (fmap fromIntegral currPos) (fmap fromIntegral nextPos)
+    let newProgress = progress + speed * dt
+    if newProgress > distance
+      then moveTrain (Train, Position (GridPosition nextPos : rest) (newProgress - distance), Speed speed)
+      else return $ Left $ Position (GridPosition currPos : GridPosition nextPos : rest) newProgress
 
-toFloatVector :: (Integral a1, Num a2) => V2 a1 -> V2 a2
-toFloatVector = fmap fromIntegral
-
-getPositionOnGrid :: Position -> V2 Float
-getPositionOnGrid (Position (Sector Empty) _) = 0.0
-getPositionOnGrid (Position (Sector (_ :<| Empty)) _) = 0.0
-getPositionOnGrid (Position (Sector (start :<| next :<| rest)) progress) =
-  if startNextDistance < progress
-    then getPositionOnGrid (Position (Sector (next :<| rest)) (progress - startNextDistance))
-    else
-      let dir = Linear.normalize $ nextPos ^-^ startPos
-       in startPos ^+^ (dir ^* progress)
-  where
-    startPos =
-      let GridPosition v = start
-       in toFloatVector v
-    nextPos =
-      let GridPosition v = next
-       in toFloatVector v
-    startNextDistance = Linear.distance startPos nextPos
-
-getRotation :: Position -> Float
-getRotation (Position (Sector Empty) _) = 0.0
-getRotation (Position (Sector (_ :<| Empty)) _) = 0.0
-getRotation (Position (Sector (start :<| next :<| _)) _) =
-  let dir = nextPos ^-^ startPos
-   in Linear.unangle dir * 180 / pi
-  where
-    startPos =
-      let GridPosition v = start
-       in toFloatVector v
-    nextPos =
-      let GridPosition v = next
-       in toFloatVector v
+-- calculateCarPositions :: Entity -> PositionState [(V2 Float, Float)]
+-- calculateCarPositions train = do
+--   startPos <- State.get
+--   move 1.0
+--   endPos <- State.get
+--   let dir = endPos ^-^ startPos
+--   let rotation = Linear.unangle dir * 180 / pi
+--   let car = (startPos, rotation)
+--   move 0.1
+--   trainRest <- calculateCarPositions train
+--   return $ car : trainRest

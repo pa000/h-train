@@ -10,6 +10,7 @@ module Lib (main) where
 import Apecs
 import Control.Monad.Extra
 import Data.Sequence (fromList)
+import qualified Direction
 import qualified Entity
 import Input (handleInput)
 import qualified Node
@@ -17,7 +18,6 @@ import qualified Raylib as RL
 import Rendering (render)
 import Train (makeTrain, moveTrains)
 import Types
-import Util
 import Prelude hiding (last)
 
 main :: IO ()
@@ -78,19 +78,18 @@ makeSector startNode endNode = do
   nodesInDir <-
     Node.getVisibleFromInDir
       startNode
-      (Node.getNormalizedDir startPos endPos)
-  let nodesInBetween = takeWhileInclusive (/= endNode) nodesInDir
+      (Direction.getNormalized startPos endPos)
+  let nodesInBetween = takeWhile (/= endNode) nodesInDir ++ [endNode]
   nodesPositions <- mapM Entity.getPosition (startNode : nodesInBetween)
   newEntity_ $ Sector (fromList nodesPositions)
 
+  _ <- makeTrain (Sector (fromList nodesPositions))
   foldM_ makeTrack startNode nodesInBetween
   where
-    -- _ <- makeTrain $ Sector (fromList $ from : nodesInBetween)
-
     makeTrack :: Entity -> Entity -> System World Entity
-    makeTrack node node' = do
-      connect node node'
-      return node'
+    makeTrack node next = do
+      connect node next
+      return next
 
 connect :: Entity -> Entity -> System World ()
 connect nodeEntity nodeEntity' = do

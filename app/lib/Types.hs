@@ -7,8 +7,6 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
 
-{-# HLINT ignore "Use newtype instead of data" #-}
-
 module Types
   ( VehicleType (..),
     Train (..),
@@ -24,6 +22,7 @@ module Types
     Clicked (..),
     Selected (..),
     Hovered (..),
+    Switch (..),
     ConnectedTo (..),
     cellSize,
     initWorld,
@@ -34,10 +33,8 @@ where
 import Apecs
 import Apecs.Experimental.Reactive
 import Data.Ix
-import qualified Data.Map as Map
 import Data.Sequence
 import Linear.V2
-import Raylib.Types (Vector2)
 
 cellSize :: Num p => p
 cellSize = 30
@@ -58,7 +55,7 @@ data Node = Node
 instance Component Node where
   type Storage Node = Map Node
 
-data ConnectedTo = ConnectedTo [GridPosition]
+newtype ConnectedTo = ConnectedTo [GridPosition]
 
 data Train = Train
 
@@ -68,7 +65,7 @@ instance Component Train where
 instance Component ConnectedTo where
   type Storage ConnectedTo = Map ConnectedTo
 
-data Position = Position !Sector !Float
+data Position = Position ![GridPosition] !Float
 
 instance Component Position where
   type Storage Position = Map Position
@@ -117,6 +114,11 @@ data Hovered = Hovered
 instance Component Hovered where
   type Storage Hovered = Unique Hovered
 
+newtype Switch = Switch (Entity, Entity)
+
+instance Component Switch where
+  type Storage Switch = Unique Switch
+
 makeWorld
   "World"
   [ ''VehicleType,
@@ -132,5 +134,6 @@ makeWorld
     ''Selected,
     ''ConnectedTo,
     ''Train,
-    ''Hovered
+    ''Hovered,
+    ''Switch
   ]
