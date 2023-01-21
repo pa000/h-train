@@ -1,19 +1,20 @@
 {-# OPTIONS -Wall #-}
 
-module Rendering (render, getScreenPos, isVisibleOnScreen) where
+module Rendering (render) where
 
 import Apecs
 import Control.Monad
 import Data.Foldable
 import Data.Sequence
+import qualified Data.Sequence as Seq
 import qualified Entity
-import Foreign.C (CFloat (CFloat))
 import Linear
-import qualified Position
 import qualified Raylib as RL
 import qualified Raylib.Colors as RL
 import Raylib.Types (Vector2 (..))
 import qualified Raylib.Types as RL
+import Screen
+import qualified Train
 import Types
 import Prelude hiding (last)
 
@@ -32,6 +33,7 @@ render = do
     renderReachableNodes
     renderBuildMode
   renderSectors
+  renderJunctions
   unless (buildingMode state) $ do
     highlightHoveredSector
 
@@ -42,12 +44,17 @@ render = do
 renderTrains :: System World ()
 renderTrains = cmapM_ renderTrain
 
-renderTrain :: (Train, Position) -> System World ()
-renderTrain (_, pos) = do
-  let positionOnGrid = Position.onGrid pos
-  let rotation = Position.getRotation pos
-  let (Vector2 x y) = getScreenPosF positionOnGrid
-  let rectangle = RL.Rectangle x y 20.0 10.0
+renderTrain :: (Train, Position, Entity) -> System World ()
+renderTrain (_, _, train) = do
+  carPositions <- Train.calculateCarPositions train
+  mapM_ renderCar carPositions
+
+renderCar :: (V2 Float, V2 Float) -> System World ()
+renderCar (startPos, endPos) = do
+  let dir = endPos ^-^ startPos
+  let rotation = Linear.unangle dir * 180 / pi
+  let (Vector2 x y) = getScreenPosF startPos
+  let rectangle = RL.Rectangle x y 15.0 10.0
   liftIO $ RL.drawRectanglePro rectangle (Vector2 0 5) rotation RL.red
 
 highlightHoveredSector :: System World ()
@@ -85,10 +92,18 @@ renderHoveredBlock = do
     Just hoveredNode -> do
       GridPosition (V2 hoveredBlockX hoveredBlockY) <-
         Entity.getPosition hoveredNode
+      state <- get global
       liftIO $ do
         let x = hoveredBlockX * cellSize + cellSize `div` 2
         let y = hoveredBlockY * cellSize + cellSize `div` 2
         RL.drawRectangle x y cellSize cellSize RL.gray
+        when (placingSemaphore state) $ do
+          RL.drawRectangle
+            (x + cellSize `div` 4)
+            (y + cellSize `div` 4)
+            (cellSize `div` 2)
+            (cellSize `div` 2)
+            RL.green
 
 renderBuildMode :: System World ()
 renderBuildMode = do
@@ -125,7 +140,7 @@ renderSector :: RL.Color -> Sector -> System World ()
 renderSector color (Sector (prefix :|> last)) = do
   _ <- foldrM (renderTrack color) last prefix
   return ()
-renderSector _ (Sector Empty) = error "I know my invariants so this won't happen"
+renderSector _ (Sector Seq.Empty) = error "I know my invariants so this won't happen"
 
 renderHoveredSector :: Sector -> System World ()
 renderHoveredSector = renderSector RL.red
@@ -138,23 +153,16 @@ renderTrack color (GridPosition v1) (GridPosition v2) = do
     RL.drawCircleV (getScreenPos v2) 1.5 color
     return $ GridPosition v1
 
-getScreenPos :: V2 Int -> Vector2
-getScreenPos (V2 x y) =
-  Vector2
-    (CFloat . fromIntegral $ (x + 1) * cellSize)
-    (CFloat . fromIntegral $ (y + 1) * cellSize)
+renderJunctions :: System World ()
+renderJunctions = cmapM_ renderJunction
 
-getScreenPosF :: V2 Float -> Vector2
-getScreenPosF (V2 x y) =
-  Vector2 (CFloat (x + 1) * cellSize) (CFloat (y + 1) * cellSize)
+renderJunction :: (NodeType, GridPosition) -> System World ()
+renderJunction (Junction (GridPosition switchPos, GridPosition switchPos') _, GridPosition pos) = do
+  liftIO $ RL.drawCircleV (getScreenPos pos) (cellSize / 3) RL.black
+  liftIO $ RL.drawLineEx (getScreenPos pos) (getScreenPos switchPos) 3 RL.white
+  liftIO $ RL.drawLineEx (getScreenPos pos) (getScreenPos switchPos') 3 RL.white
+renderJunction _ = return ()
 
 renderReachableNodes :: System World ()
 renderReachableNodes =
   cmapM_ $ \(Reachable, Node, pos) -> renderNode pos
-
-isVisibleOnScreen :: GridPosition -> System World Bool
-isVisibleOnScreen (GridPosition pos) = do
-  h <- liftIO RL.getScreenHeight
-  w <- liftIO RL.getScreenWidth
-  let (Vector2 (CFloat x) (CFloat y)) = getScreenPos pos
-  return $ 0 <= x && x < fromIntegral w && 0 <= y && y < fromIntegral h

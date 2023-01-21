@@ -1,55 +1,68 @@
 {-# OPTIONS -Wall #-}
-{-# LANGUAGE TypeApplications #-}
 
 module Train where
 
 import Apecs
 import Data.Foldable
 import qualified Entity
-import qualified Linear
+import Linear (V2)
 import qualified Node
+import qualified Position
 import qualified Raylib as RL
 import Types
 
 makeTrain :: Sector -> System World Entity
 makeTrain (Sector sector) = do
-  newEntity (Train, Position (toList sector) 0.0, Speed 0.7)
+  car1 <- newEntity Train
+  car2 <- newEntity (Train, CoupledTo car1)
+  car3 <- newEntity (Train, CoupledTo car2)
+  car4 <- newEntity (Train, CoupledTo car3)
+  newEntity (Train, Position (toList sector) 0.0, Speed 1, CoupledTo car4)
 
 moveTrains :: System World ()
-moveTrains = cmapM moveTrain
+moveTrains = do
+  cmapM updateTrainRoute
+  cmapM moveTrain
 
-moveTrain :: (Train, Position, Speed) -> System World (Either Position (Not (Train, Position, Speed)))
-moveTrain (Train, Position [] _, _) = return $ Left $ Position [] 0
-moveTrain (Train, Position [_] _, _) = return $ Left $ Position [] 0
-moveTrain (Train, Position [currPos, nextPos] progress, Speed speed) = do
+updateTrainRoute ::
+  (Train, Position) ->
+  System World (Either Position (Not (Train, Position, Speed)))
+updateTrainRoute (Train, Position [] _) = return $ Right Not
+updateTrainRoute (Train, Position [_] _) = return $ Right Not
+updateTrainRoute (Train, Position [currPos, nextPos] progress) = do
   nextNode <- Node.at nextPos
   currNode <- Node.at currPos
   neighbours <- Node.getNeighbours nextNode
   case find (/= currNode) neighbours of
-    Nothing -> return $ Right $ Not @(Train, Position, Speed)
+    Nothing -> return $ Right Not
     Just neighbourNode -> do
-      neighbourPosition <- Entity.getPosition neighbourNode
-      moveTrain (Train, Position [currPos, nextPos, neighbourPosition] progress, Speed speed)
-moveTrain
-  ( Train,
-    Position (GridPosition currPos : GridPosition nextPos : rest) progress,
-    Speed speed
-    ) = do
-    dt <- liftIO RL.getFrameTime
-    let distance = Linear.distance (fmap fromIntegral currPos) (fmap fromIntegral nextPos)
-    let newProgress = progress + speed * dt
-    if newProgress > distance
-      then moveTrain (Train, Position (GridPosition nextPos : rest) (newProgress - distance), Speed speed)
-      else return $ Left $ Position (GridPosition currPos : GridPosition nextPos : rest) newProgress
+      neighbourPos <- Entity.getPosition neighbourNode
+      return $ Left $ Position [currPos, nextPos, neighbourPos] progress
+updateTrainRoute (Train, pos) = return $ Left pos
 
--- calculateCarPositions :: Entity -> PositionState [(V2 Float, Float)]
--- calculateCarPositions train = do
---   startPos <- State.get
---   move 1.0
---   endPos <- State.get
---   let dir = endPos ^-^ startPos
---   let rotation = Linear.unangle dir * 180 / pi
---   let car = (startPos, rotation)
---   move 0.1
---   trainRest <- calculateCarPositions train
---   return $ car : trainRest
+moveTrain ::
+  (Train, Position, Speed) ->
+  System World (Either Position (Not (Train, Position, Speed)))
+moveTrain (Train, pos, Speed speed) = do
+  dt <- liftIO RL.getFrameTime
+  newPosition <- Position.moveForward (speed * dt) pos
+  return $ Left newPosition
+
+calculateCarPositionsWithStartPosition ::
+  Position -> Entity -> System World [(V2 Float, V2 Float)]
+calculateCarPositionsWithStartPosition startPos car = do
+  endPos <- Position.moveForward 0.5 startPos
+  isCoupled <- Entity.isCoupled car
+  let carPosition = (Position.onGrid startPos, Position.onGrid endPos)
+  if isCoupled
+    then do
+      CoupledTo nextCar <- Entity.getCoupledTo car
+      nextCarStartPos <- Position.moveForward 0.05 endPos
+      restCarPositions <- calculateCarPositionsWithStartPosition nextCarStartPos nextCar
+      return $ carPosition : restCarPositions
+    else return [carPosition]
+
+calculateCarPositions :: Entity -> System World [(V2 Float, V2 Float)]
+calculateCarPositions train = do
+  startPos <- Entity.getTrainPosition train
+  calculateCarPositionsWithStartPosition startPos train

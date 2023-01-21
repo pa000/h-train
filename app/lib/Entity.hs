@@ -36,5 +36,14 @@ isReachable entity = exists entity (Proxy @Reachable)
 getPosition :: Entity -> System World GridPosition
 getPosition = get
 
-getConnectedTo :: Entity -> System World ConnectedTo
-getConnectedTo = get
+getNodeType :: Entity -> System World NodeType
+getNodeType = get
+
+isCoupled :: Entity -> System World Bool
+isCoupled entity = exists entity (Proxy @CoupledTo)
+
+getTrainPosition :: Entity -> System World Position
+getTrainPosition = get
+
+getCoupledTo :: Entity -> System World CoupledTo
+getCoupledTo = get

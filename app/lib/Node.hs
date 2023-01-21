@@ -7,19 +7,35 @@ import Apecs
 import Apecs.Experimental.Reactive
 import Control.Monad.Extra (concatMapM, (&&^))
 import Control.Monad.ListM
+import Data.Foldable
 import qualified Direction
 import qualified Entity
 import Linear
-import Rendering
+import Screen
 import Types
 
 at :: GridPosition -> System World Entity
 at pos = do
   entitiesAtNodePos <- withReactive $ ordLookup pos
   case entitiesAtNodePos of
-    [] -> newEntity (Node, ConnectedTo [], pos)
+    [] -> newEntity (Node, Empty, pos)
     [e] -> return e
     _ : _ -> error "Very many entities"
+
+connect :: Entity -> Entity -> System World ()
+connect node node' = do
+  nodePos <- Entity.getPosition node
+  node' $~ addNeighbour nodePos
+
+  node'Pos <- Entity.getPosition node'
+  node $~ addNeighbour node'Pos
+
+addNeighbour :: GridPosition -> NodeType -> NodeType
+addNeighbour neighbour Empty = DeadEnd neighbour
+addNeighbour neighbour (DeadEnd neighbour') = Through neighbour' neighbour
+addNeighbour neighbour (Through n n') = Junction (n, n') [n, n', neighbour]
+addNeighbour neighbour (Junction (n, n') neighbours) =
+  Junction (n, n') (neighbour : neighbours)
 
 clearReachable :: System World ()
 clearReachable = cmap $ \(Node, Reachable) -> Not @Reachable
@@ -62,8 +78,28 @@ getVisibleFromInDir nodeEntity (V2 dx dy) = do
 
 getNeighbours :: Entity -> System World [Entity]
 getNeighbours nodeEntity = do
-  ConnectedTo neighbours <- Entity.getConnectedTo nodeEntity
-  mapM at neighbours
+  nodeType <- Entity.getNodeType nodeEntity
+  let neighbourPositions =
+        ( case nodeType of
+            Empty -> []
+            DeadEnd neighbourPos -> [neighbourPos]
+            Through neighbourPos neighbourPos' -> [neighbourPos, neighbourPos']
+            Junction _ neighbours -> neighbours
+        )
+  mapM at neighbourPositions
+
+getConnected :: Entity -> System World [Entity]
+getConnected node = do
+  nodeType <- Entity.getNodeType node
+  let connectedPositions =
+        ( case nodeType of
+            Empty -> []
+            DeadEnd neighbourPos -> [neighbourPos]
+            Through neighbourPos neighbourPos' -> [neighbourPos, neighbourPos']
+            Junction (connectedPos, connectedPos') _ ->
+              [connectedPos, connectedPos']
+        )
+  mapM at connectedPositions
 
 isEmpty :: Entity -> System World Bool
 isEmpty nodeEntity = null <$> getNeighbours nodeEntity
@@ -108,3 +144,8 @@ getLegalTurns (V2 0 0) = []
 getLegalTurns (V2 0 dy) = [V2 dx dy | dx <- [-1 .. 1]]
 getLegalTurns (V2 dx 0) = [V2 dx dy | dy <- [-1 .. 1]]
 getLegalTurns (V2 dx dy) = [V2 dx dy, V2 0 dy, V2 dx 0]
+
+getNext :: Entity -> Entity -> System World (Maybe Entity)
+getNext from current = do
+  connected <- getConnected current
+  return $ find (/= from) connected

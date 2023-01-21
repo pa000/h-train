@@ -5,7 +5,6 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
-{-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
 
 module Types
   ( VehicleType (..),
@@ -19,11 +18,12 @@ module Types
     Reachable (..),
     Node (..),
     Direction,
+    CoupledTo (..),
     Clicked (..),
     Selected (..),
     Hovered (..),
-    Switch (..),
-    ConnectedTo (..),
+    Camera (..),
+    NodeType (..),
     cellSize,
     initWorld,
     World,
@@ -35,6 +35,7 @@ import Apecs.Experimental.Reactive
 import Data.Ix
 import Data.Sequence
 import Linear.V2
+import qualified Raylib.Types as RL
 
 cellSize :: Num p => p
 cellSize = 30
@@ -55,15 +56,19 @@ data Node = Node
 instance Component Node where
   type Storage Node = Map Node
 
-newtype ConnectedTo = ConnectedTo [GridPosition]
+data NodeType
+  = Empty
+  | DeadEnd GridPosition
+  | Through GridPosition GridPosition
+  | Junction (GridPosition, GridPosition) [GridPosition]
+
+instance Component NodeType where
+  type Storage NodeType = Map NodeType
 
 data Train = Train
 
 instance Component Train where
   type Storage Train = Map Train
-
-instance Component ConnectedTo where
-  type Storage ConnectedTo = Map ConnectedTo
 
 data Position = Position ![GridPosition] !Float
 
@@ -90,8 +95,14 @@ newtype Sector = Sector (Seq GridPosition)
 instance Component Sector where
   type Storage Sector = Map Sector
 
+newtype CoupledTo = CoupledTo Entity
+
+instance Component CoupledTo where
+  type Storage CoupledTo = Map CoupledTo
+
 data State = State
-  { buildingMode :: Bool
+  { buildingMode :: Bool,
+    placingSemaphore :: Bool
   }
 
 instance Component State where
@@ -114,14 +125,15 @@ data Hovered = Hovered
 instance Component Hovered where
   type Storage Hovered = Unique Hovered
 
-newtype Switch = Switch (Entity, Entity)
+newtype Camera = Camera RL.Camera2D
 
-instance Component Switch where
-  type Storage Switch = Unique Switch
+instance Component Camera where
+  type Storage Camera = Unique Camera
 
 makeWorld
   "World"
   [ ''VehicleType,
+    ''CoupledTo,
     ''Position,
     ''Speed,
     ''Sector,
@@ -132,8 +144,8 @@ makeWorld
     ''Node,
     ''Clicked,
     ''Selected,
-    ''ConnectedTo,
+    ''NodeType,
     ''Train,
     ''Hovered,
-    ''Switch
+    ''Camera
   ]

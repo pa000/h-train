@@ -42,7 +42,9 @@ library
         Entity,
         Direction,
         Position,
-        PositionState
+        GridPosition,
+        State,
+        Screen
     default-language: Haskell2010
 
 executable h-train

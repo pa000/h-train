@@ -25,12 +25,12 @@ main = initWorld >>= runSystem (initialise >> run >> terminate)
 
 initialise :: System World ()
 initialise = do
-  let state = State {buildingMode = False}
+  let state = State {buildingMode = False, placingSemaphore = False}
   set global state
 
   liftIO $ do
     RL.initWindow 800 400 "h-train"
-    RL.setTargetFPS 30
+    RL.setTargetFPS 240
 
 terminate :: System World ()
 terminate = do
@@ -88,15 +88,5 @@ makeSector startNode endNode = do
   where
     makeTrack :: Entity -> Entity -> System World Entity
     makeTrack node next = do
-      connect node next
+      Node.connect node next
       return next
-
-connect :: Entity -> Entity -> System World ()
-connect nodeEntity nodeEntity' = do
-  pos' <- Entity.getPosition nodeEntity'
-  nodeEntity $~ \(ConnectedTo neighbours) -> ConnectedTo $ pos' : neighbours
-
-  pos <- Entity.getPosition nodeEntity
-  nodeEntity' $~ \(ConnectedTo neighbours') -> ConnectedTo $ pos : neighbours'
-
-  return ()

@@ -10,6 +10,7 @@ import Linear.V2
 import qualified Node
 import qualified Raylib as RL
 import qualified Raylib.Types as RL
+import qualified State
 import Types
 
 handleInput :: System World ()
@@ -57,11 +58,6 @@ handleKeyPresses = do
   unless (key == RL.KeyNull) handleKeyPresses
 
 handleKeyPress :: RL.KeyboardKey -> System World ()
-handleKeyPress RL.KeyB = toggleBuildingMode
+handleKeyPress RL.KeyB = State.toggleBuildingMode
+handleKeyPress RL.KeyS = State.togglePlacingSemaphore
 handleKeyPress _ = do return ()
-
-toggleBuildingMode :: System World ()
-toggleBuildingMode = do
-  state <- get global
-  let state' = state {buildingMode = not $ buildingMode state}
-  set global state'
