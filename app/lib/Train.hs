@@ -10,6 +10,10 @@ import qualified Node
 import qualified Position
 import qualified Raylib as RL
 import Types
+import Prelude hiding (tail)
+
+breakDeceleration :: Float
+breakDeceleration = 0.2
 
 makeTrain :: Sector -> System World Entity
 makeTrain (Sector sector) = do
@@ -19,9 +23,10 @@ makeTrain (Sector sector) = do
   car4 <- newEntity (Train, CoupledTo car3)
   newEntity (Train, Position (toList sector) 0.0, Speed 1, CoupledTo car4)
 
-moveTrains :: System World ()
-moveTrains = do
+updateTrains :: System World ()
+updateTrains = do
   cmapM updateTrainRoute
+  cmapM updateTrainSpeed
   cmapM moveTrain
 
 updateTrainRoute ::
@@ -29,31 +34,66 @@ updateTrainRoute ::
   System World (Either Position (Not (Train, Position, Speed)))
 updateTrainRoute (Train, Position [] _) = return $ Right Not
 updateTrainRoute (Train, Position [_] _) = return $ Right Not
-updateTrainRoute (Train, Position [currPos, nextPos] progress) = do
-  nextNode <- Node.at nextPos
-  currNode <- Node.at currPos
-  neighbours <- Node.getNeighbours nextNode
-  case find (/= currNode) neighbours of
+updateTrainRoute (Train, Position [from, curr] progress) = do
+  next <- Node.getNext from curr
+  case next of
     Nothing -> return $ Right Not
-    Just neighbourNode -> do
-      neighbourPos <- Entity.getPosition neighbourNode
-      return $ Left $ Position [currPos, nextPos, neighbourPos] progress
+    Just nextNode -> return $ Left $ Position [from, curr, nextNode] progress
 updateTrainRoute (Train, pos) = return $ Left pos
 
-moveTrain ::
-  (Train, Position, Speed) ->
-  System World (Either Position (Not (Train, Position, Speed)))
+getBreakDistance :: Float -> Float
+getBreakDistance speed = speed * speed / (2 * breakDeceleration)
+
+updateTrainSpeed :: (Train, Speed, Entity) -> System World Speed
+updateTrainSpeed (Train, Speed speed, train) = do
+  frontPos <- calculateTrainFrontPosition train
+  let breakDistance = getBreakDistance speed - 0.5
+  breakPos <- Position.moveForward breakDistance frontPos
+  case breakPos of
+    Position [] _ -> return $ Speed speed
+    Position [_] _ -> return $ Speed speed
+    Position (from : curr : _) _ -> do
+      hasSignal <- Entity.hasSignal curr
+      dt <- liftIO RL.getFrameTime
+      if hasSignal
+        then do
+          Signal green towards <- Entity.getSignal curr
+          if towards == from && not green
+            then do
+              let speed' = max (speed - breakDeceleration * dt) 0
+              return $ Speed speed'
+            else return $ Speed $ min 1 (speed + breakDeceleration * dt)
+        else return $ Speed $ min 1 (speed + breakDeceleration * dt)
+
+moveTrain :: (Train, Position, Speed) -> System World Position
 moveTrain (Train, pos, Speed speed) = do
   dt <- liftIO RL.getFrameTime
-  newPosition <- Position.moveForward (speed * dt) pos
-  return $ Left newPosition
+  Position.moveForward (speed * dt) pos
+
+calculateTrainFrontPosition :: Entity -> System World Position
+calculateTrainFrontPosition train = do
+  trainLength <- getTrainLength train
+  startPos <- Entity.getTrainPosition train
+  Position.moveForward trainLength startPos
+
+getTrainLength :: Entity -> System World Float
+getTrainLength train = do
+  isCoupled <- Entity.isCoupled train
+  if isCoupled
+    then do
+      CoupledTo tail <- Entity.getCoupledTo train
+      tailLength <- getTrainLength tail
+      return $ 0.5 + 0.05 + tailLength
+    else return 0.5
 
 calculateCarPositionsWithStartPosition ::
   Position -> Entity -> System World [(V2 Float, V2 Float)]
 calculateCarPositionsWithStartPosition startPos car = do
   endPos <- Position.moveForward 0.5 startPos
   isCoupled <- Entity.isCoupled car
-  let carPosition = (Position.onGrid startPos, Position.onGrid endPos)
+  startPosOnGrid <- Position.onGrid startPos
+  endPosOnGrid <- Position.onGrid endPos
+  let carPosition = (startPosOnGrid, endPosOnGrid)
   if isCoupled
     then do
       CoupledTo nextCar <- Entity.getCoupledTo car

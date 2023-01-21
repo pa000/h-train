@@ -5,11 +5,14 @@ module Node where
 
 import Apecs
 import Apecs.Experimental.Reactive
-import Control.Monad.Extra (concatMapM, (&&^))
+import Control.Monad
+import Control.Monad.Extra (concatMapM, filterM, (&&^))
 import Control.Monad.ListM
 import Data.Foldable
+import Data.Maybe
 import qualified Direction
 import qualified Entity
+import qualified GridPosition
 import Linear
 import Screen
 import Types
@@ -24,13 +27,10 @@ at pos = do
 
 connect :: Entity -> Entity -> System World ()
 connect node node' = do
-  nodePos <- Entity.getPosition node
-  node' $~ addNeighbour nodePos
+  node' $~ addNeighbour node
+  node $~ addNeighbour node'
 
-  node'Pos <- Entity.getPosition node'
-  node $~ addNeighbour node'Pos
-
-addNeighbour :: GridPosition -> NodeType -> NodeType
+addNeighbour :: Entity -> NodeType -> NodeType
 addNeighbour neighbour Empty = DeadEnd neighbour
 addNeighbour neighbour (DeadEnd neighbour') = Through neighbour' neighbour
 addNeighbour neighbour (Through n n') = Junction (n, n') [n, n', neighbour]
@@ -79,27 +79,21 @@ getVisibleFromInDir nodeEntity (V2 dx dy) = do
 getNeighbours :: Entity -> System World [Entity]
 getNeighbours nodeEntity = do
   nodeType <- Entity.getNodeType nodeEntity
-  let neighbourPositions =
-        ( case nodeType of
-            Empty -> []
-            DeadEnd neighbourPos -> [neighbourPos]
-            Through neighbourPos neighbourPos' -> [neighbourPos, neighbourPos']
-            Junction _ neighbours -> neighbours
-        )
-  mapM at neighbourPositions
+  return $ case nodeType of
+    Empty -> []
+    DeadEnd neighbour -> [neighbour]
+    Through neighbour neighbour' -> [neighbour, neighbour']
+    Junction _ neighbours -> neighbours
 
 getConnected :: Entity -> System World [Entity]
 getConnected node = do
   nodeType <- Entity.getNodeType node
-  let connectedPositions =
-        ( case nodeType of
-            Empty -> []
-            DeadEnd neighbourPos -> [neighbourPos]
-            Through neighbourPos neighbourPos' -> [neighbourPos, neighbourPos']
-            Junction (connectedPos, connectedPos') _ ->
-              [connectedPos, connectedPos']
-        )
-  mapM at connectedPositions
+  return $ case nodeType of
+    Empty -> []
+    DeadEnd neighbour -> [neighbour]
+    Through neighbour neighbour' -> [neighbour, neighbour']
+    Junction (connectedNode, connectedNode') _ ->
+      [connectedNode, connectedNode']
 
 isEmpty :: Entity -> System World Bool
 isEmpty nodeEntity = null <$> getNeighbours nodeEntity
@@ -149,3 +143,49 @@ getNext :: Entity -> Entity -> System World (Maybe Entity)
 getNext from current = do
   connected <- getConnected current
   return $ find (/= from) connected
+
+distance :: Entity -> Entity -> System World Float
+distance node node' = do
+  nodePos <- Entity.getPosition node
+  node'Pos <- Entity.getPosition node'
+  return $ GridPosition.distance nodePos node'Pos
+
+placeSignal :: Entity -> System World ()
+placeSignal node = do
+  nodeType <- Entity.getNodeType node
+  case nodeType of
+    Through neigh _ -> do
+      hasSignal <- Entity.hasSignal node
+      if hasSignal
+        then do
+          Signal green towards <- Entity.getSignal node
+          towards' <- getNext towards node
+          node $= Signal green (fromMaybe towards towards')
+        else node $= Signal False neigh
+    _ -> return ()
+
+turnSwitch :: Entity -> System World ()
+turnSwitch node = do
+  nodeType <- Entity.getNodeType node
+  case nodeType of
+    Junction (switch, switch') neighbours -> do
+      legalTurns <- filterM (isTurnLegal switch' node) neighbours
+      let nextLegalSwitch = head $ tail $ dropWhile (/= switch) (legalTurns ++ legalTurns)
+      node $= Junction (switch', nextLegalSwitch) neighbours
+      when (nextLegalSwitch == switch) $ turnSwitch node
+    _ -> return ()
+
+toggleSignal :: Entity -> System World ()
+toggleSignal node = do
+  hasSignal <- Entity.hasSignal node
+  when hasSignal $ do
+    Signal green towards <- Entity.getSignal node
+    node $= Signal (not green) towards
+
+handleClick :: Entity -> System World ()
+handleClick node = do
+  nodeType <- Entity.getNodeType node
+  case nodeType of
+    Through _ _ -> toggleSignal node
+    Junction _ _ -> turnSwitch node
+    _ -> return ()

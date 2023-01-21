@@ -3,6 +3,7 @@
 module Screen where
 
 import Apecs
+import Constants
 import Foreign.C
 import Linear
 import qualified Raylib as RL

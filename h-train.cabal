@@ -44,7 +44,8 @@ library
         Position,
         GridPosition,
         State,
-        Screen
+        Screen,
+        Rendering.Train
     default-language: Haskell2010
 
 executable h-train

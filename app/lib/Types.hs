@@ -7,14 +7,14 @@
 {-# LANGUAGE TypeFamilies #-}
 
 module Types
-  ( VehicleType (..),
-    Train (..),
+  ( Train (..),
     Position (..),
     Speed (..),
     Sector (..),
     Busy (..),
     State (..),
     GridPosition (..),
+    Signal (..),
     Reachable (..),
     Node (..),
     Direction,
@@ -24,7 +24,6 @@ module Types
     Hovered (..),
     Camera (..),
     NodeType (..),
-    cellSize,
     initWorld,
     World,
   )
@@ -36,14 +35,6 @@ import Data.Ix
 import Data.Sequence
 import Linear.V2
 import qualified Raylib.Types as RL
-
-cellSize :: Num p => p
-cellSize = 30
-
-data VehicleType = MU | WithLoco | JustCars
-
-instance Component VehicleType where
-  type Storage VehicleType = Map VehicleType
 
 newtype GridPosition = GridPosition (V2 Int)
   deriving (Eq, Ord, Ix, Show)
@@ -58,9 +49,9 @@ instance Component Node where
 
 data NodeType
   = Empty
-  | DeadEnd GridPosition
-  | Through GridPosition GridPosition
-  | Junction (GridPosition, GridPosition) [GridPosition]
+  | DeadEnd Entity
+  | Through Entity Entity
+  | Junction (Entity, Entity) [Entity]
 
 instance Component NodeType where
   type Storage NodeType = Map NodeType
@@ -70,7 +61,7 @@ data Train = Train
 instance Component Train where
   type Storage Train = Map Train
 
-data Position = Position ![GridPosition] !Float
+data Position = Position ![Entity] !Float
 
 instance Component Position where
   type Storage Position = Map Position
@@ -90,7 +81,7 @@ data Busy = Busy
 instance Component Busy where
   type Storage Busy = Map Busy
 
-newtype Sector = Sector (Seq GridPosition)
+newtype Sector = Sector (Seq Entity)
 
 instance Component Sector where
   type Storage Sector = Map Sector
@@ -102,7 +93,7 @@ instance Component CoupledTo where
 
 data State = State
   { buildingMode :: Bool,
-    placingSemaphore :: Bool
+    placingSignal :: Bool
   }
 
 instance Component State where
@@ -130,10 +121,14 @@ newtype Camera = Camera RL.Camera2D
 instance Component Camera where
   type Storage Camera = Unique Camera
 
+data Signal = Signal Bool Entity
+
+instance Component Signal where
+  type Storage Signal = Map Signal
+
 makeWorld
   "World"
-  [ ''VehicleType,
-    ''CoupledTo,
+  [ ''CoupledTo,
     ''Position,
     ''Speed,
     ''Sector,
@@ -147,5 +142,6 @@ makeWorld
     ''NodeType,
     ''Train,
     ''Hovered,
+    ''Signal,
     ''Camera
   ]

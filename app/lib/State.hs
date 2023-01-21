@@ -11,8 +11,8 @@ toggleBuildingMode = do
   let state' = state {buildingMode = not $ buildingMode state}
   set global state'
 
-togglePlacingSemaphore :: System World ()
-togglePlacingSemaphore = do
+togglePlacingSignal :: System World ()
+togglePlacingSignal = do
   state <- get global
-  let state' = state {placingSemaphore = not $ placingSemaphore state}
+  let state' = state {placingSignal = not $ placingSignal state}
   set global state'

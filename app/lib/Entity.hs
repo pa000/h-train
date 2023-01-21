@@ -47,3 +47,9 @@ getTrainPosition = get
 
 getCoupledTo :: Entity -> System World CoupledTo
 getCoupledTo = get
+
+hasSignal :: Entity -> System World Bool
+hasSignal entity = exists entity (Proxy @Signal)
+
+getSignal :: Entity -> System World Signal
+getSignal = get

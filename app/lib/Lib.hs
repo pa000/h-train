@@ -16,7 +16,7 @@ import Input (handleInput)
 import qualified Node
 import qualified Raylib as RL
 import Rendering (render)
-import Train (makeTrain, moveTrains)
+import Train (makeTrain, updateTrains)
 import Types
 import Prelude hiding (last)
 
@@ -25,7 +25,7 @@ main = initWorld >>= runSystem (initialise >> run >> terminate)
 
 initialise :: System World ()
 initialise = do
-  let state = State {buildingMode = False, placingSemaphore = False}
+  let state = State {buildingMode = False, placingSignal = False}
   set global state
 
   liftIO $ do
@@ -47,7 +47,7 @@ update :: System World ()
 update = do
   handleInput
   handleClickedBlock
-  moveTrains
+  updateTrains
 
 handleClickedBlock :: System World ()
 handleClickedBlock = do
@@ -56,9 +56,16 @@ handleClickedBlock = do
   case (clickedBlock, selectedBlock) of
     (Nothing, Nothing) -> Node.clearReachable
     (Just clickedEntity, Nothing) -> do
-      Node.clearReachable
-      Entity.setSelected clickedEntity
-      Node.markReachableFrom clickedEntity
+      state <- get global
+      if buildingMode state
+        then
+          if placingSignal state
+            then Node.placeSignal clickedEntity
+            else do
+              Node.clearReachable
+              Entity.setSelected clickedEntity
+              Node.markReachableFrom clickedEntity
+        else Node.handleClick clickedEntity
     (Nothing, Just _) -> return ()
     (Just clickedEntity, Just selectedEntity) -> do
       if clickedEntity == selectedEntity
@@ -80,10 +87,9 @@ makeSector startNode endNode = do
       startNode
       (Direction.getNormalized startPos endPos)
   let nodesInBetween = takeWhile (/= endNode) nodesInDir ++ [endNode]
-  nodesPositions <- mapM Entity.getPosition (startNode : nodesInBetween)
-  newEntity_ $ Sector (fromList nodesPositions)
+  newEntity_ $ Sector (fromList (startNode : nodesInBetween))
 
-  _ <- makeTrain (Sector (fromList nodesPositions))
+  _ <- makeTrain (Sector (fromList (startNode : nodesInBetween)))
   foldM_ makeTrack startNode nodesInBetween
   where
     makeTrack :: Entity -> Entity -> System World Entity

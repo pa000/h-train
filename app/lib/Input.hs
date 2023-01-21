@@ -4,6 +4,7 @@
 module Input (getNodeUnderCursor, handleInput) where
 
 import Apecs
+import Constants
 import Control.Monad
 import qualified Entity
 import Linear.V2
@@ -59,5 +60,5 @@ handleKeyPresses = do
 
 handleKeyPress :: RL.KeyboardKey -> System World ()
 handleKeyPress RL.KeyB = State.toggleBuildingMode
-handleKeyPress RL.KeyS = State.togglePlacingSemaphore
+handleKeyPress RL.KeyS = State.togglePlacingSignal
 handleKeyPress _ = do return ()
