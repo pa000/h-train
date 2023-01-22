@@ -15,6 +15,8 @@ import qualified Entity
 import Input (handleInput)
 import qualified Node
 import qualified Raylib as RL
+import Raylib.Types
+import qualified Raylib.Types as RL
 import Rendering (render)
 import Train (makeTrain, updateTrains)
 import Types
@@ -28,8 +30,11 @@ initialise = do
   let state = State {buildingMode = False, placingSignal = False}
   set global state
 
+  let camera = Camera $ RL.Camera2D (Vector2 0 0) (Vector2 0 0) 0 1
+  set global camera
+
   liftIO $ do
-    RL.initWindow 800 400 "h-train"
+    RL.initWindow 1200 600 "h-train"
     RL.setTargetFPS 240
 
 terminate :: System World ()

@@ -6,7 +6,7 @@ module Node where
 import Apecs
 import Apecs.Experimental.Reactive
 import Control.Monad
-import Control.Monad.Extra (concatMapM, filterM, (&&^))
+import Control.Monad.Extra (concatMapM, (&&^))
 import Control.Monad.ListM
 import Data.Foldable
 import Data.Maybe

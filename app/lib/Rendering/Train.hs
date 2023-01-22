@@ -3,6 +3,7 @@
 module Rendering.Train where
 
 import Apecs
+import Constants (cellSize)
 import Linear
 import qualified Raylib as RL
 import qualified Raylib.Colors as RL
@@ -25,5 +26,5 @@ renderCar (startPos, endPos) = do
   let dir = endPos ^-^ startPos
   let rotation = Linear.unangle dir * 180 / pi
   let (Vector2 x y) = getScreenPosF startPos
-  let rectangle = RL.Rectangle x y 15.0 10.0
-  liftIO $ RL.drawRectanglePro rectangle (Vector2 0 5) rotation RL.red
+  let rectangle = RL.Rectangle x y (cellSize / 2) (cellSize / 3)
+  liftIO $ RL.drawRectanglePro rectangle (Vector2 0 (cellSize / 6)) rotation RL.red

@@ -10,13 +10,14 @@ import Data.Maybe
 import Data.Sequence
 import qualified Data.Sequence as Seq
 import qualified Entity
+import Foreign.C
 import Linear ((^*), (^+^), (^-^))
 import qualified Linear
 import Linear.V2 (V2 (..))
-import qualified Node
 import Position (toFloatVector)
 import qualified Raylib as RL
 import qualified Raylib.Colors as RL
+import Raylib.Types
 import qualified Raylib.Types as RL
 import qualified Rendering.Train as Train
 import Screen
@@ -25,8 +26,10 @@ import Prelude hiding (last)
 
 render :: System World ()
 render = do
+  Camera camera <- get global
   liftIO $ do
     RL.beginDrawing
+    RL.beginMode2D camera
     RL.clearBackground RL.black
 
   state <- get global
@@ -45,7 +48,11 @@ render = do
   renderSignals
   Train.renderAll
 
-  liftIO RL.endDrawing
+  liftIO $ RL.drawCircle 0 0 5 RL.purple
+
+  liftIO $ do
+    RL.endMode2D
+    RL.endDrawing
 
 highlightHoveredSector :: System World ()
 highlightHoveredSector = do
@@ -96,30 +103,29 @@ renderHoveredBlock = do
 
 renderBuildMode :: System World ()
 renderBuildMode = do
+  Camera camera <- get global
   liftIO $ do
+    let Vector2 (CFloat tx) (CFloat ty) = RL.camera2D'target camera
+    let CFloat zoom = RL.camera2d'zoom camera
+    let dx = fromEnum tx `div` cellSize - 1
+    let dy = fromEnum ty `div` cellSize - 1
     h <- RL.getScreenHeight
     w <- RL.getScreenWidth
-    let n = h `div` cellSize - 1
-    let m = w `div` cellSize - 1
-    mapM_ (renderHorizontalLine m) [0 .. n]
-    mapM_ (renderVerticalLine n) [0 .. m]
+    let n = fromEnum (fromIntegral h / (cellSize * zoom)) + 1
+    let m = fromEnum (fromIntegral w / (cellSize * zoom)) + 1
+    mapM_ (renderHorizontalLine dx m) [dy .. n + dy]
+    mapM_ (renderVerticalLine dy n) [dx .. m + dx]
   where
-    renderHorizontalLine :: Int -> Int -> IO ()
-    renderHorizontalLine m n = do
-      RL.drawLine
-        (cellSize `div` 2)
-        (n * cellSize + cellSize `div` 2)
-        (m * cellSize + cellSize `div` 2)
-        (n * cellSize + cellSize `div` 2)
+    renderHorizontalLine z m n = do
+      RL.drawLineV
+        (getScreenPosF $ V2 (fromIntegral z - 0.5) (fromIntegral n - 0.5))
+        (getScreenPosF $ V2 (fromIntegral (m + z) + 0.5) (fromIntegral n - 0.5))
         RL.darkGray
 
-    renderVerticalLine :: Int -> Int -> IO ()
-    renderVerticalLine m n = do
-      RL.drawLine
-        (n * cellSize + cellSize `div` 2)
-        (cellSize `div` 2)
-        (n * cellSize + cellSize `div` 2)
-        (m * cellSize + cellSize `div` 2)
+    renderVerticalLine z m n = do
+      RL.drawLineV
+        (getScreenPosF $ V2 (fromIntegral n - 0.5) (fromIntegral z - 0.5))
+        (getScreenPosF $ V2 (fromIntegral n - 0.5) (fromIntegral (m + z) + 0.5))
         RL.darkGray
 
 renderSectors :: System World ()
