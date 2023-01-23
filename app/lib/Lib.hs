@@ -85,16 +85,12 @@ handleClickedBlock = do
 
 makeSector :: Entity -> Entity -> System World ()
 makeSector startNode endNode = do
-  startPos <- Entity.getPosition startNode
-  endPos <- Entity.getPosition endNode
-  nodesInDir <-
-    Node.getVisibleFromInDir
-      startNode
-      (Direction.getNormalized startPos endPos)
-  let nodesInBetween = takeWhile (/= endNode) nodesInDir ++ [endNode]
+  nodesInBetween <- Node.getBetween startNode endNode
   newEntity_ $ Sector (fromList (startNode : nodesInBetween))
 
-  _ <- makeTrain (Sector (fromList (startNode : nodesInBetween)))
+  whenM (Node.isEmpty startNode) $ do
+    _ <- makeTrain (Sector (fromList (startNode : nodesInBetween)))
+    return ()
   foldM_ makeTrack startNode nodesInBetween
   where
     makeTrack :: Entity -> Entity -> System World Entity

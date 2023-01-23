@@ -189,3 +189,16 @@ handleClick node = do
     Through _ _ -> toggleSignal node
     Junction _ _ -> turnSwitch node
     _ -> return ()
+
+getBetween :: Entity -> Entity -> System World [Entity]
+getBetween startNode endNode = do
+  startPos <- Entity.getPosition startNode
+  let GridPosition (V2 x y) = startPos
+  endPos <- Entity.getPosition endNode
+  let V2 dx dy = Direction.getNormalized startPos endPos
+  let positionsInDir =
+        [ GridPosition (V2 (x + dx * steps) (y + dy * steps))
+          | steps <- [1 ..]
+        ]
+  let positionsInBetween = takeWhile (/= endPos) positionsInDir ++ [endPos]
+  mapM at positionsInBetween

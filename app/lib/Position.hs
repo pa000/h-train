@@ -26,11 +26,11 @@ moveForward _ pos@(Position [] _) = return pos
 moveForward _ pos@(Position [_] _) = return pos
 moveForward step (Position [from, current] progress) = do
   rest <- Node.getNext from current
-  newRoute <- case rest of
-    Nothing -> return []
+  case rest of
+    Nothing -> return $ Position [from, current] (progress + step)
     Just restNode -> do
-      return [from, current, restNode]
-  moveForward step (Position newRoute progress)
+      let newRoute = [from, current, restNode]
+      moveForward step (Position newRoute progress)
 moveForward step (Position (from : current : rest) progress) = do
   distance <- Node.distance from current
   let newProgress = progress + step

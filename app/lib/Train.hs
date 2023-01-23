@@ -21,7 +21,8 @@ makeTrain (Sector sector) = do
   car2 <- newEntity (Train, CoupledTo car1)
   car3 <- newEntity (Train, CoupledTo car2)
   car4 <- newEntity (Train, CoupledTo car3)
-  newEntity (Train, Position (toList sector) 0.0, Speed 1, CoupledTo car4)
+  l <- getTrainLength car4
+  newEntity (Train, Position (toList sector) (- (l + 0.55)), Speed 1, CoupledTo car4)
 
 updateTrains :: System World ()
 updateTrains = do
@@ -37,7 +38,11 @@ updateTrainRoute (Train, Position [_] _) = return $ Right Not
 updateTrainRoute (Train, Position [from, curr] progress) = do
   next <- Node.getNext from curr
   case next of
-    Nothing -> return $ Right Not
+    Nothing -> do
+      dist <- Node.distance from curr
+      if progress > dist
+        then return $ Right Not
+        else return $ Left $ Position [from, curr] progress
     Just nextNode -> return $ Left $ Position [from, curr, nextNode] progress
 updateTrainRoute (Train, pos) = return $ Left pos
 
