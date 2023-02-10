@@ -32,7 +32,8 @@ library
         linear,
         extra,
         monadlist,
-        mtl
+        mtl,
+        MonadRandom
     other-modules:
         Rendering,
         Types,
@@ -45,7 +46,11 @@ library
         GridPosition,
         State,
         Screen,
-        Rendering.Train
+        Rendering.Train,
+        Rendering.UI,
+        MainMenu,
+        Game,
+        UI
     default-language: Haskell2010
 
 executable h-train

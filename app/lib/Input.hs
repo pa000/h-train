@@ -100,6 +100,7 @@ handleKeyPresses = do
   unless (key == RL.KeyNull) handleKeyPresses
 
 handleKeyPress :: RL.KeyboardKey -> System World ()
-handleKeyPress RL.KeyB = State.toggleBuildingMode
-handleKeyPress RL.KeyS = State.togglePlacingSignal
+handleKeyPress RL.KeyB = set global ToggleBuildMode
+handleKeyPress RL.KeyS = set global ToggleBuildSignal
+handleKeyPress RL.KeyD = set global ToggleDestructionMode
 handleKeyPress _ = do return ()

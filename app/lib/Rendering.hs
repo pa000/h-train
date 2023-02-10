@@ -1,4 +1,5 @@
 {-# OPTIONS -Wall #-}
+{-# LANGUAGE LambdaCase #-}
 
 module Rendering (render) where
 
@@ -7,8 +8,8 @@ import Constants
 import Control.Monad
 import Data.Foldable
 import Data.Maybe
-import Data.Sequence
-import qualified Data.Sequence as Seq
+import Data.Sequence hiding (Empty)
+import qualified Data.Sequence as Seq hiding (Empty)
 import qualified Entity
 import Foreign.C
 import Linear ((^*), (^+^), (^-^))
@@ -20,19 +21,32 @@ import qualified Raylib.Colors as RL
 import Raylib.Types
 import qualified Raylib.Types as RL
 import qualified Rendering.Train as Train
+import qualified Rendering.UI as UI
 import Screen
 import Types
 import Prelude hiding (last)
 
 render :: System World ()
 render = do
-  Camera camera <- get global
   liftIO $ do
     RL.beginDrawing
-    RL.beginMode2D camera
     RL.clearBackground RL.black
 
+  get global >>= \case
+    Game -> renderGame
+    _ -> return ()
+
+  UI.render
+  liftIO RL.endDrawing
+
+renderGame :: System World ()
+renderGame = do
   state <- get global
+  Camera camera <- get global
+  liftIO $ do
+    when (buildingMode state && destructionMode state) $
+      RL.clearBackground (RL.Color (CUChar 64) (CUChar 14) (CUChar 10) (CUChar 255))
+    RL.beginMode2D camera
 
   when (buildingMode state) $ do
     renderHoveredBlock
@@ -40,8 +54,7 @@ render = do
     maybe (return ()) renderNode selectedNode
     renderReachableNodes
     renderBuildMode
-  renderSectors
-  renderJunctions
+  renderTracks
   -- unless (buildingMode state) $ do
   --   highlightHoveredSector
 
@@ -50,24 +63,7 @@ render = do
 
   liftIO $ RL.drawCircle 0 0 5 RL.purple
 
-  liftIO $ do
-    RL.endMode2D
-    RL.endDrawing
-
-highlightHoveredSector :: System World ()
-highlightHoveredSector = do
-  maybeHoveredBlock <- Entity.getHovered
-  case maybeHoveredBlock of
-    Nothing -> return ()
-    Just hoveredBlock -> do
-      hoveredSector <- getSectorContainingBlock hoveredBlock
-      forM_ hoveredSector renderHoveredSector
-
-getSectorContainingBlock :: Entity -> System World (Maybe Sector)
-getSectorContainingBlock block =
-  cfold
-    (\acc s@(Sector sector) -> if block `elem` sector then Just s else acc)
-    Nothing
+  liftIO RL.endMode2D
 
 renderNode :: Entity -> System World ()
 renderNode nodeEntity = do
@@ -101,6 +97,19 @@ renderHoveredBlock = do
             (cellSize `div` 2)
             RL.green
 
+renderTracks :: System World ()
+renderTracks = cmapM_ renderConnection
+
+renderConnection :: (NodeType, Entity) -> System World ()
+renderConnection (Empty, _) = return ()
+renderConnection (DeadEnd neighbour, node) =
+  void $ renderTrack node neighbour
+renderConnection (Through n n', node) = do
+  mapM_ (renderTrack node) [n, n']
+renderConnection (Junction (n, n') neighbours, node) = do
+  mapM_ (renderTrackMiddle node) neighbours
+  mapM_ (renderTrack node) [n, n']
+
 renderBuildMode :: System World ()
 renderBuildMode = do
   Camera camera <- get global
@@ -128,39 +137,32 @@ renderBuildMode = do
         (getScreenPosF $ V2 (fromIntegral n - 0.5) (fromIntegral (m + z) + 0.5))
         RL.darkGray
 
-renderSectors :: System World ()
-renderSectors = cmapM_ (renderSector RL.white)
-
-renderSector :: RL.Color -> Sector -> System World ()
-renderSector color (Sector (prefix :|> last)) = do
-  _ <- foldrM (renderTrack color) last prefix
-  return ()
-renderSector _ (Sector Seq.Empty) = error "I know my invariants so this won't happen"
-
-renderHoveredSector :: Sector -> System World ()
-renderHoveredSector = renderSector RL.red
-
-renderTrack :: RL.Color -> Entity -> Entity -> System World Entity
-renderTrack color node node' = do
+renderTrackMiddle :: Entity -> Entity -> System World Entity
+renderTrackMiddle node node' = do
   (GridPosition v1) <- Entity.getPosition node
   (GridPosition v2) <- Entity.getPosition node'
+  let (Vector2 (CFloat v1x) (CFloat v1y)) = getScreenPos v1
+  let (Vector2 (CFloat v2x) (CFloat v2y)) = getScreenPos v2
+  let v1MiddlePos = Vector2 (CFloat ((v1x + v2x) / 4 + v1x / 2)) (CFloat ((v1y + v2y) / 4 + v1y / 2))
+  let v2MiddlePos = Vector2 (CFloat ((v1x + v2x) / 4 + v2x / 2)) (CFloat ((v1y + v2y) / 4 + v2y / 2))
   liftIO $ do
-    RL.drawLineEx (getScreenPos v1) (getScreenPos v2) 3 color
-    RL.drawCircleV (getScreenPos v1) 1.5 color
-    RL.drawCircleV (getScreenPos v2) 1.5 color
+    RL.drawLineEx v1MiddlePos v2MiddlePos 3 RL.white
     return node
 
-renderJunctions :: System World ()
-renderJunctions = cmapM_ renderJunction
-
-renderJunction :: (NodeType, GridPosition) -> System World ()
-renderJunction (Junction (switch, switch') _, GridPosition pos) = do
-  GridPosition switchPos <- Entity.getPosition switch
-  GridPosition switchPos' <- Entity.getPosition switch'
-  liftIO $ RL.drawCircleV (getScreenPos pos) (cellSize / 3) RL.black
-  liftIO $ RL.drawLineEx (getScreenPos pos) (getScreenPos switchPos) 3 RL.white
-  liftIO $ RL.drawLineEx (getScreenPos pos) (getScreenPos switchPos') 3 RL.white
-renderJunction _ = return ()
+renderTrack :: Entity -> Entity -> System World Entity
+renderTrack node node' = do
+  isBusy <- Entity.isBusy node
+  isBusy' <- Entity.isBusy node'
+  let color = if isBusy && isBusy' then RL.red else RL.white
+  (GridPosition v1) <- Entity.getPosition node
+  (GridPosition v2) <- Entity.getPosition node'
+  let v1ScreenPos@(Vector2 (CFloat v1x) (CFloat v1y)) = getScreenPos v1
+  let (Vector2 (CFloat v2x) (CFloat v2y)) = getScreenPos v2
+  let v2MiddlePos = Vector2 (CFloat ((v1x + v2x) / 4 + v2x / 2)) (CFloat ((v1y + v2y) / 4 + v2y / 2))
+  liftIO $ do
+    RL.drawLineEx v1ScreenPos v2MiddlePos 3 color
+    RL.drawCircleV v1ScreenPos 1.5 color
+    return node
 
 renderReachableNodes :: System World ()
 renderReachableNodes =

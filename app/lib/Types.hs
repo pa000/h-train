@@ -2,6 +2,7 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
@@ -10,7 +11,6 @@ module Types
   ( Train (..),
     Position (..),
     Speed (..),
-    Sector (..),
     Busy (..),
     State (..),
     GridPosition (..),
@@ -24,6 +24,15 @@ module Types
     Hovered (..),
     Camera (..),
     NodeType (..),
+    Scene (..),
+    Station (..),
+    OnClick (..),
+    Text (..),
+    ScreenPosition (..),
+    ScreenSize (..),
+    Action (..),
+    Timer (..),
+    Button,
     initWorld,
     World,
   )
@@ -34,7 +43,7 @@ import Apecs.Experimental.Reactive
 import Data.Ix
 import Data.Sequence
 import Linear.V2
-import qualified Raylib.Types as RL
+import qualified Raylib.Types as RL hiding (Camera)
 
 newtype GridPosition = GridPosition (V2 Int)
   deriving (Eq, Ord, Ix, Show)
@@ -49,9 +58,9 @@ instance Component Node where
 
 data NodeType
   = Empty
-  | DeadEnd Entity
-  | Through Entity Entity
-  | Junction (Entity, Entity) [Entity]
+  | DeadEnd !Entity
+  | Through !Entity !Entity
+  | Junction !(Entity, Entity) ![Entity]
 
 instance Component NodeType where
   type Storage NodeType = Map NodeType
@@ -61,7 +70,7 @@ data Train = Train
 instance Component Train where
   type Storage Train = Map Train
 
-data Position = Position ![Entity] !Float
+data Position = Position Entity Entity !Float
 
 instance Component Position where
   type Storage Position = Map Position
@@ -81,11 +90,6 @@ data Busy = Busy
 instance Component Busy where
   type Storage Busy = Map Busy
 
-newtype Sector = Sector (Seq Entity)
-
-instance Component Sector where
-  type Storage Sector = Map Sector
-
 newtype CoupledTo = CoupledTo Entity
 
 instance Component CoupledTo where
@@ -93,6 +97,7 @@ instance Component CoupledTo where
 
 data State = State
   { buildingMode :: Bool,
+    destructionMode :: Bool,
     placingSignal :: Bool
   }
 
@@ -121,17 +126,56 @@ newtype Camera = Camera RL.Camera2D
 instance Component Camera where
   type Storage Camera = Unique Camera
 
-data Signal = Signal Bool Entity
+data Signal = Signal !Bool !Entity
 
 instance Component Signal where
   type Storage Signal = Map Signal
+
+data Station = Station
+
+instance Component Station where
+  type Storage Station = Map Station
+
+data Scene = MainMenu | Pause | Game
+
+instance Component Scene where
+  type Storage Scene = Unique Scene
+
+newtype OnClick = OnClick Action
+
+instance Component OnClick where
+  type Storage OnClick = Map OnClick
+
+data Text = Text !String !Int !RL.Color
+
+instance Component Text where
+  type Storage Text = Map Text
+
+newtype ScreenPosition = ScreenPosition (V2 Int)
+
+instance Component ScreenPosition where
+  type Storage ScreenPosition = Map ScreenPosition
+
+newtype ScreenSize = ScreenSize (V2 Int)
+
+instance Component ScreenSize where
+  type Storage ScreenSize = Map ScreenSize
+
+data Action = StartGame | ToggleBuildMode | ToggleBuildSignal | ToggleDestructionMode
+
+instance Component Action where
+  type Storage Action = Unique Action
+
+newtype Timer = Timer Float
+
+instance Component Timer where
+  type Storage Timer = Map Timer
 
 makeWorld
   "World"
   [ ''CoupledTo,
     ''Position,
     ''Speed,
-    ''Sector,
     ''Busy,
     ''State,
     ''Reachable,
@@ -143,5 +187,15 @@ makeWorld
     ''Train,
     ''Hovered,
     ''Signal,
-    ''Camera
+    ''Scene,
+    ''Text,
+    ''OnClick,
+    ''ScreenPosition,
+    ''ScreenSize,
+    ''Camera,
+    ''Timer,
+    ''Station,
+    ''Action
   ]
+
+type Button = (ScreenPosition, ScreenSize, OnClick)

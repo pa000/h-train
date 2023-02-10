@@ -1,9 +1,15 @@
 {-# OPTIONS -Wall #-}
+{-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE TypeApplications #-}
 
 module Train where
 
 import Apecs
+import Apecs.System
+import Control.Monad
+import Control.Monad.Extra (notM)
 import Data.Foldable
+import Data.List ((\\))
 import qualified Entity
 import Linear (V2)
 import qualified Node
@@ -12,42 +18,36 @@ import qualified Raylib as RL
 import Types
 import Prelude hiding (tail)
 
-breakDeceleration :: Float
-breakDeceleration = 0.2
+acceleration :: Float
+acceleration = 0.2
 
-makeTrain :: Sector -> System World Entity
-makeTrain (Sector sector) = do
+makeTrain :: Entity -> Entity -> System World Entity
+makeTrain from to = do
   car1 <- newEntity Train
   car2 <- newEntity (Train, CoupledTo car1)
   car3 <- newEntity (Train, CoupledTo car2)
   car4 <- newEntity (Train, CoupledTo car3)
   l <- getTrainLength car4
-  newEntity (Train, Position (toList sector) (- (l + 0.55)), Speed 1, CoupledTo car4)
+  newEntity (Train, Position from to (- (l + 0.55)), Speed 1, CoupledTo car4)
 
 updateTrains :: System World ()
 updateTrains = do
-  cmapM updateTrainRoute
+  cmapM removeTrainOutOfTrack
   cmapM updateTrainSpeed
   cmapM moveTrain
 
-updateTrainRoute ::
-  (Train, Position) ->
-  System World (Either Position (Not (Train, Position, Speed)))
-updateTrainRoute (Train, Position [] _) = return $ Right Not
-updateTrainRoute (Train, Position [_] _) = return $ Right Not
-updateTrainRoute (Train, Position [from, curr] progress) = do
-  next <- Node.getNext from curr
-  case next of
-    Nothing -> do
-      dist <- Node.distance from curr
-      if progress > dist
-        then return $ Right Not
-        else return $ Left $ Position [from, curr] progress
-    Just nextNode -> return $ Left $ Position [from, curr, nextNode] progress
-updateTrainRoute (Train, pos) = return $ Left pos
-
 getBreakDistance :: Float -> Float
-getBreakDistance speed = speed * speed / (2 * breakDeceleration)
+getBreakDistance speed = speed * speed / (2 * acceleration)
+
+removeTrainOutOfTrack ::
+  Position -> System World (Either () (Not (Position, Speed, Train)))
+removeTrainOutOfTrack pos@(Position from curr progress) = do
+  dist <- Node.distance from curr
+  if progress > dist
+    then do
+      leaveTrack pos
+      return $ Right Not
+    else return $ Left ()
 
 updateTrainSpeed :: (Train, Speed, Entity) -> System World Speed
 updateTrainSpeed (Train, Speed speed, train) = do
@@ -55,9 +55,7 @@ updateTrainSpeed (Train, Speed speed, train) = do
   let breakDistance = getBreakDistance speed - 0.5
   breakPos <- Position.moveForward breakDistance frontPos
   case breakPos of
-    Position [] _ -> return $ Speed speed
-    Position [_] _ -> return $ Speed speed
-    Position (from : curr : _) _ -> do
+    Position from curr _ -> do
       hasSignal <- Entity.hasSignal curr
       dt <- liftIO RL.getFrameTime
       if hasSignal
@@ -65,21 +63,50 @@ updateTrainSpeed (Train, Speed speed, train) = do
           Signal green towards <- Entity.getSignal curr
           if towards == from && not green
             then do
-              let speed' = max (speed - breakDeceleration * dt) 0
+              let speed' = max (speed - acceleration * dt) 0
               return $ Speed speed'
-            else return $ Speed $ min 1 (speed + breakDeceleration * dt)
-        else return $ Speed $ min 1 (speed + breakDeceleration * dt)
+            else return $ Speed $ min 1 (speed + acceleration * dt)
+        else return $ Speed $ min 1 (speed + acceleration * dt)
 
 moveTrain :: (Train, Position, Speed) -> System World Position
-moveTrain (Train, pos, Speed speed) = do
+moveTrain (Train, pos@(Position from _ _), Speed speed) = do
   dt <- liftIO RL.getFrameTime
-  Position.moveForward (speed * dt) pos
+  pos'@(Position from' _ _) <- Position.moveForward (speed * dt) pos
+  when (from /= from') $ leaveTrack pos
+  return pos'
 
 calculateTrainFrontPosition :: Entity -> System World Position
 calculateTrainFrontPosition train = do
   trainLength <- getTrainLength train
   startPos <- Entity.getTrainPosition train
-  Position.moveForward trainLength startPos
+  frontPos <- Position.moveForward trainLength startPos
+  enterTrack frontPos
+  return frontPos
+
+leaveTrack :: Position -> System World ()
+leaveTrack (Position from curr _) = do
+  Entity.getNodeType from >>= \case
+    Junction _ _ -> do
+      Node.getNext curr from >>= \case
+        Nothing -> error ""
+        Just opposite ->
+          Node.markSectorFree from opposite
+    Through _ _ -> do
+      Node.getNext from curr >>= \case
+        Nothing -> Node.markSectorFree curr from
+        Just _ -> return ()
+      Node.getNext curr from >>= \case
+        Nothing -> error ""
+        Just opposite -> do
+          signalTowards <- Entity.hasSignalTowards opposite from
+          when signalTowards $ Node.markSectorFree from opposite
+    _ -> return ()
+
+enterTrack :: Position -> System World ()
+enterTrack (Position from curr progress) = do
+  Node.markSectorBusy from curr
+  when (progress > 0.7) $ do
+    Entity.setSignal False from
 
 getTrainLength :: Entity -> System World Float
 getTrainLength train = do

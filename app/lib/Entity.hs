@@ -51,5 +51,26 @@ getCoupledTo = get
 hasSignal :: Entity -> System World Bool
 hasSignal entity = exists entity (Proxy @Signal)
 
+hasSignalTowards :: Entity -> Entity -> System World Bool
+hasSignalTowards towards entity = do
+  entityHasSignal <- hasSignal entity
+  if entityHasSignal
+    then do
+      Signal _ towards' <- get entity
+      return $ towards == towards'
+    else return False
+
+clearBusy :: Entity -> System World ()
+clearBusy entity = entity $= Not @Busy
+
 getSignal :: Entity -> System World Signal
 getSignal = get
+
+setSignal :: Bool -> Entity -> System World ()
+setSignal green entity = entity $~ \(Signal _ e) -> Signal green e
+
+setBusy :: Entity -> System World ()
+setBusy entity = entity $= Busy
+
+isBusy :: Entity -> System World Bool
+isBusy entity = exists entity (Proxy @Busy)

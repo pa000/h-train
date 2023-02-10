@@ -16,3 +16,9 @@ togglePlacingSignal = do
   state <- get global
   let state' = state {placingSignal = not $ placingSignal state}
   set global state'
+
+toggleDestructionMode :: System World ()
+toggleDestructionMode = do
+  state <- get global
+  let state' = state {destructionMode = not $ destructionMode state}
+  set global state'
