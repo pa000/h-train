@@ -33,7 +33,15 @@ library
         extra,
         monadlist,
         mtl,
-        MonadRandom
+        MonadRandom,
+        pcg-random,
+        hashable,
+        matrix,
+        random,
+        text,
+        bytestring,
+        tf-random,
+        cryptohash-sha256
     other-modules:
         Rendering,
         Types,
@@ -47,10 +55,11 @@ library
         State,
         Screen,
         Rendering.Train,
-        Rendering.UI,
         MainMenu,
         Game,
-        UI
+        UI,
+        Simple,
+        Random
     default-language: Haskell2010
 
 executable h-train

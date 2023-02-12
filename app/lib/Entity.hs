@@ -33,11 +33,17 @@ setReachable entity = entity $= Reachable
 isReachable :: Entity -> System World Bool
 isReachable entity = exists entity (Proxy @Reachable)
 
+hasStation :: Entity -> System World Bool
+hasStation entity = exists entity (Proxy @Station)
+
 getPosition :: Entity -> System World GridPosition
 getPosition = get
 
 getNodeType :: Entity -> System World NodeType
 getNodeType = get
+
+hasTimer :: Entity -> System World Bool
+hasTimer entity = exists entity (Proxy @Timer)
 
 isCoupled :: Entity -> System World Bool
 isCoupled entity = exists entity (Proxy @CoupledTo)
@@ -66,8 +72,8 @@ clearBusy entity = entity $= Not @Busy
 getSignal :: Entity -> System World Signal
 getSignal = get
 
-setSignal :: Bool -> Entity -> System World ()
-setSignal green entity = entity $~ \(Signal _ e) -> Signal green e
+updateSignal :: Bool -> Entity -> System World ()
+updateSignal green entity = entity $~ \(Signal _ e) -> Signal green e
 
 setBusy :: Entity -> System World ()
 setBusy entity = entity $= Busy

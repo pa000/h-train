@@ -2,6 +2,7 @@
 {-# LANGUAGE BlockArguments #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications #-}
@@ -17,14 +18,14 @@ import qualified Game
 import Input (handleInput)
 import qualified MainMenu
 import qualified Node
+import Random
 import qualified Raylib as RL
 import Raylib.Types
 import qualified Raylib.Types as RL
 import Rendering (render)
 import qualified State
-import Train (makeTrain, updateTrains)
+import Train (handleExpiredTimer, makeTrain, updateTrains)
 import Types
-import qualified UI
 import Prelude hiding (last)
 
 main :: IO ()
@@ -40,6 +41,8 @@ initialise = do
 
   set global $ Timer 60
 
+  set global $ Seed $ mkMRGen 243332
+
   liftIO $ do
     RL.initWindow 1200 600 "h-train"
     RL.setTargetFPS 240
@@ -51,17 +54,10 @@ terminate = do
   liftIO RL.closeWindow
 
 changeScene :: Scene -> System World ()
-changeScene newScene = do
-  set global newScene
-  UI.clear
-  case newScene of
-    MainMenu -> MainMenu.init
-    Pause -> MainMenu.init
-    Game -> Game.init
+changeScene = set global
 
 run :: System World ()
 run = do
-  UI.run
   update
   render
   shouldClose <- liftIO RL.windowShouldClose
@@ -88,29 +84,42 @@ update = do
   handleClickedBlock
   updateTrains
   updateTimers
-  checkExpiredTimer
+  checkExpiredTimers
 
-checkExpiredTimer :: System World ()
-checkExpiredTimer = do
+checkExpiredTimers :: System World ()
+checkExpiredTimers = do
+  checkExpiredGlobalTimer
+  checkExpiredTrainTimers
+
+checkExpiredTrainTimers :: System World ()
+checkExpiredTrainTimers = cmapM_ checkExpiredTrainTimer
+
+checkExpiredTrainTimer :: (Train, Timer, Entity) -> System World ()
+checkExpiredTrainTimer (Train, Timer t, train) = do
+  when (t < 0) $ Train.handleExpiredTimer train
+
+checkExpiredGlobalTimer :: System World ()
+checkExpiredGlobalTimer = do
   Timer t <- get global
-  when (t < 0) handleExpiredTimer
+  when (t < 0) handleExpiredGlobalTimer
 
-handleExpiredTimer :: System World ()
-handleExpiredTimer = do
-  freeDeadEnds <-
-    cfold
-      ( \acc (nodeType, _ :: Not Busy, e :: Entity) ->
-          case nodeType of
-            DeadEnd n -> (e, n) : acc
-            _ -> acc
-      )
-      []
-  let n = length freeDeadEnds
-  when (n > 0) $ do
-    random <- liftIO $ getRandomR (0, n - 1)
-    let (n, n') = freeDeadEnds !! random
-    _ <- makeTrain n n'
-    return ()
+handleExpiredGlobalTimer :: System World ()
+handleExpiredGlobalTimer = do
+  -- Timer t <- get global
+  -- freeDeadEnds <-
+  --   cfold
+  --     ( \acc (nodeType, _ :: Not Busy, e :: Entity) ->
+  --         case nodeType of
+  --           DeadEnd n -> (e, n) : acc
+  --           _ -> acc
+  --     )
+  --     []
+  -- let n = length freeDeadEnds
+  -- when (n > 0) $ do
+  --   random <- liftIO $ getRandomR (0, n - 1)
+  --   let (n, n') = freeDeadEnds !! random
+  --   _ <- makeTrain n n'
+  --   return ()
   set global $ Timer 60
 
 updateTimers :: System World ()
@@ -158,9 +167,9 @@ makeSector :: Entity -> Entity -> System World ()
 makeSector startNode endNode = do
   nodesInBetween <- Node.getBetween startNode endNode
 
-  -- whenM (Node.isEmpty startNode) $ do
-  --   _ <- makeTrain startNode (head nodesInBetween)
-  --   return ()
+  whenM (Node.isEmpty startNode) $ do
+    _ <- makeTrain startNode (head nodesInBetween)
+    return ()
   foldM_ makeTrack startNode nodesInBetween
   where
     makeTrack :: Entity -> Entity -> System World Entity

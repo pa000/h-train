@@ -16,56 +16,32 @@ addText text x y size color = do
   font <- liftIO RL.getFontDefault
   Vector2 (CFloat textWidth) (CFloat textHeight) <-
     liftIO $ RL.measureTextEx font text (fromIntegral size) (fromIntegral size / 10)
-  newEntity_ (Text text size color, ScreenPosition (V2 (x - fromEnum textWidth `div` 2) (y - fromEnum textHeight `div` 2)))
+  liftIO $ RL.drawText text (x - fromEnum textWidth `div` 2) (y - fromEnum textHeight `div` 2) size color
 
-addButton :: String -> Int -> Int -> Int -> Raylib.Types.Color -> Action -> System World ()
-addButton text textX textY textSize textColor action = do
+addButton :: String -> Int -> Int -> Int -> Raylib.Types.Color -> System World () -> System World ()
+addButton text textX textY textSize textColor onClick = do
   font <- liftIO RL.getFontDefault
   Vector2 (CFloat textWidth) (CFloat textHeight) <-
     liftIO $ RL.measureTextEx font text (fromIntegral textSize) (fromIntegral textSize / 10)
-  newEntity_
-    (OnClick action, ScreenPosition (V2 (textX - 10 - fromEnum textWidth `div` 2) (textY - 10 - fromEnum textHeight `div` 2)), ScreenSize (V2 (fromEnum textWidth + 20) (fromEnum textHeight + 20)))
+
+  let x = textX - 10 - fromEnum textWidth `div` 2
+  let y = textY - 10 - fromEnum textHeight `div` 2
+  let w = fromEnum textWidth + 20
+  let h = fromEnum textHeight + 20
+
+  buttonHovered <- isButtonHovered x y w h
+  let backgroundColor = if buttonHovered then RL.darkGray else RL.black
+
+  liftIO $ RL.drawRectangle x y w h backgroundColor
+  liftIO $ RL.drawRectangleLines x y w h RL.white
   addText text textX textY textSize textColor
 
-run :: System World ()
-run = do
-  update
+  when buttonHovered $ do
+    isMouseClicked <- liftIO $ RL.isMouseButtonPressed RL.MouseButtonLeft
+    when isMouseClicked onClick
 
-update :: System World ()
-update = do
-  handleInput
-
-handleInput :: System World ()
-handleInput = do
-  whenM (liftIO $ RL.isMouseButtonPressed RL.MouseButtonLeft) $ do
-    mousePos <- liftIO RL.getMousePosition
-    buttons <- cfold (mouseOverButton mousePos) []
-    case buttons of
-      [] -> return ()
-      buttonAction : _ -> set global buttonAction
-  where
-    mouseOverButton (Vector2 (CFloat mouseX) (CFloat mouseY)) buttons (ScreenPosition (V2 x y), ScreenSize (V2 w h), OnClick buttonId) = do
-      if fromEnum mouseX >= x
-        && fromEnum mouseX <= x + w
-        && fromEnum mouseY >= y
-        && fromEnum mouseY <= y + h
-        then buttonId : buttons
-        else buttons
-
-clear :: System World ()
-clear = do
-  clearButtons
-  clearTexts
-
-clearButtons :: System World ()
-clearButtons =
-  cmap clearButton
-
-clearButton :: Button -> Not Button
-clearButton _ = Not
-
-clearTexts :: System World ()
-clearTexts = cmap clearText
-
-clearText :: (ScreenPosition, Text) -> Not (ScreenPosition, Text)
-clearText _ = Not
+isButtonHovered :: Int -> Int -> Int -> Int -> System World Bool
+isButtonHovered x y w h = do
+  mouseX <- liftIO RL.getMouseX
+  mouseY <- liftIO RL.getMouseY
+  return $ x <= mouseX && mouseX <= x + w && y <= mouseY && mouseY <= y + h

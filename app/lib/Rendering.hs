@@ -1,27 +1,31 @@
 {-# OPTIONS -Wall #-}
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE TypeApplications #-}
 
 module Rendering (render) where
 
 import Apecs
 import Constants
 import Control.Monad
-import Data.Foldable
+import Control.Monad.Extra
+import Data.Hashable
 import Data.Maybe
-import Data.Sequence hiding (Empty)
-import qualified Data.Sequence as Seq hiding (Empty)
 import qualified Entity
 import Foreign.C
+import GHC.Num
+import qualified Game
 import Linear ((^*), (^+^), (^-^))
 import qualified Linear
 import Linear.V2 (V2 (..))
+import qualified MainMenu
+import qualified Node
 import Position (toFloatVector)
+import Random (randomDoubleField)
 import qualified Raylib as RL
 import qualified Raylib.Colors as RL
 import Raylib.Types
 import qualified Raylib.Types as RL
 import qualified Rendering.Train as Train
-import qualified Rendering.UI as UI
 import Screen
 import Types
 import Prelude hiding (last)
@@ -36,8 +40,16 @@ render = do
     Game -> renderGame
     _ -> return ()
 
-  UI.render
+  runUI
+
   liftIO RL.endDrawing
+
+runUI :: System World ()
+runUI =
+  get global >>= \case
+    MainMenu -> MainMenu.runUI
+    Game -> Game.runUI
+    Pause -> MainMenu.runUI
 
 renderGame :: System World ()
 renderGame = do
@@ -55,19 +67,69 @@ renderGame = do
     renderReachableNodes
     renderBuildMode
   renderTracks
-  -- unless (buildingMode state) $ do
-  --   highlightHoveredSector
 
-  renderSignals
   Train.renderAll
+  renderSignals
+
+  renderVisibleStations
 
   liftIO $ RL.drawCircle 0 0 5 RL.purple
 
   liftIO RL.endMode2D
 
+renderVisibleStations :: System World ()
+renderVisibleStations = do
+  Camera camera <- get global
+  let Vector2 (CFloat tx) (CFloat ty) = RL.camera2D'target camera
+  let CFloat zoom = RL.camera2d'zoom camera
+  let dx = fromEnum tx `div` cellSize - 1
+  let dy = fromEnum ty `div` cellSize - 1
+  h <- liftIO RL.getScreenHeight
+  w <- liftIO RL.getScreenWidth
+  let n = fromEnum (fromIntegral h / (cellSize * zoom)) + 1
+  let m = fromEnum (fromIntegral w / (cellSize * zoom)) + 1
+  mapM_ (renderStationsInRow dx m) [dy .. n + dy]
+  where
+    renderStationsInRow z m n = do
+      mapM_ (renderStation n) [z .. m + z]
+    renderStation y x = do
+      node <- Node.at (GridPosition (V2 x y))
+      whenM (Entity.hasStation node) $ do
+        nodeLeft <- Node.at (GridPosition (V2 (x - 1) y))
+        nodeRight <- Node.at (GridPosition (V2 (x + 1) y))
+        whenM (Entity.hasStation nodeLeft) $ do
+          renderPlatform (V2 x y) (V2 (x - 1) y)
+        whenM (notM $ Entity.hasStation nodeLeft) $ do
+          renderPlatformEnd (V2 x y)
+        whenM (Entity.hasStation nodeRight) $ do
+          renderPlatform (V2 x y) (V2 (x + 1) y)
+        whenM (notM $ Entity.hasStation nodeRight) $ do
+          renderPlatformEnd (V2 x y)
+      where
+        renderPlatformEnd pos = do
+          liftIO $
+            RL.drawLineV
+              (getScreenPosF $ getPlatformPos pos)
+              (getScreenPosF $ getPlatformEndPos pos)
+              RL.white
+        renderPlatform pos pos' = do
+          let nodePos = getPlatformPos pos
+          let nodeLeftPos = getPlatformPos pos'
+          liftIO $
+            RL.drawLineV
+              (getScreenPosF nodePos)
+              (getScreenPosF nodeLeftPos)
+              RL.white
+        getPlatformPos (V2 x y)
+          | even y = V2 (fromIntegral x) (fromIntegral y - 0.3)
+          | otherwise = V2 (fromIntegral x) (fromIntegral y + 0.3)
+        getPlatformEndPos (V2 x y)
+          | even y = V2 (fromIntegral x) (fromIntegral y - 0.5)
+          | otherwise = V2 (fromIntegral x) (fromIntegral y + 0.5)
+
 renderNode :: Entity -> System World ()
 renderNode nodeEntity = do
-  (GridPosition (V2 x y)) <- Entity.getPosition nodeEntity
+  GridPosition (V2 x y) <- Entity.getPosition nodeEntity
   liftIO $ do
     RL.drawRectangle
       (x * cellSize + cellSize `div` 2)
@@ -176,9 +238,12 @@ renderSignal (Signal green towards, GridPosition signalPos) = do
   GridPosition towardsPos <- Entity.getPosition towards
   let dir = fmap fromIntegral signalPos ^-^ fmap fromIntegral towardsPos
   let angle = Linear.unangle dir
+  let color = if green then RL.green else RL.red
   liftIO $
     RL.drawTriangle
       (getScreenPosF $ Linear.angle (angle + 4 * pi / 3) ^* 0.4 ^+^ toFloatVector signalPos)
       (getScreenPosF $ Linear.angle (angle + 2 * pi / 3) ^* 0.4 ^+^ toFloatVector signalPos)
       (getScreenPosF $ Linear.angle angle ^* 0.4 ^+^ toFloatVector signalPos)
-      (if green then RL.green else RL.red)
+      color
+
+-- liftIO $ RL.drawCircleSector (getScreenPosF $ Linear.angle angle ^* 0.4 ^+^ toFloatVector signalPos) 30 (- angle - 120) (- angle - 60) 10 RL.white

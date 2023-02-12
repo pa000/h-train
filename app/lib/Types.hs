@@ -8,7 +8,10 @@
 {-# LANGUAGE TypeFamilies #-}
 
 module Types
-  ( Train (..),
+  ( Inventory (..),
+    GoPast (..),
+    Seed (..),
+    Train (..),
     Position (..),
     Speed (..),
     Busy (..),
@@ -26,13 +29,8 @@ module Types
     NodeType (..),
     Scene (..),
     Station (..),
-    OnClick (..),
-    Text (..),
-    ScreenPosition (..),
-    ScreenSize (..),
-    Action (..),
     Timer (..),
-    Button,
+    Action (..),
     initWorld,
     World,
   )
@@ -41,8 +39,8 @@ where
 import Apecs
 import Apecs.Experimental.Reactive
 import Data.Ix
-import Data.Sequence
 import Linear.V2
+import Random (MRGen)
 import qualified Raylib.Types as RL hiding (Camera)
 
 newtype GridPosition = GridPosition (V2 Int)
@@ -70,7 +68,7 @@ data Train = Train
 instance Component Train where
   type Storage Train = Map Train
 
-data Position = Position Entity Entity !Float
+data Position = Position !Entity !Entity !Float
 
 instance Component Position where
   type Storage Position = Map Position
@@ -141,26 +139,6 @@ data Scene = MainMenu | Pause | Game
 instance Component Scene where
   type Storage Scene = Unique Scene
 
-newtype OnClick = OnClick Action
-
-instance Component OnClick where
-  type Storage OnClick = Map OnClick
-
-data Text = Text !String !Int !RL.Color
-
-instance Component Text where
-  type Storage Text = Map Text
-
-newtype ScreenPosition = ScreenPosition (V2 Int)
-
-instance Component ScreenPosition where
-  type Storage ScreenPosition = Map ScreenPosition
-
-newtype ScreenSize = ScreenSize (V2 Int)
-
-instance Component ScreenSize where
-  type Storage ScreenSize = Map ScreenSize
-
 data Action = StartGame | ToggleBuildMode | ToggleBuildSignal | ToggleDestructionMode
 
 instance Component Action where
@@ -170,6 +148,23 @@ newtype Timer = Timer Float
 
 instance Component Timer where
   type Storage Timer = Map Timer
+
+newtype Seed = Seed MRGen
+
+instance Component Seed where
+  type Storage Seed = Unique Seed
+
+newtype GoPast = GoPast Entity
+
+instance Component GoPast where
+  type Storage GoPast = Map GoPast
+
+data Item = ITrack | ITrain | IPassenger
+
+newtype Inventory = Inventory [(Item, Int)]
+
+instance Component Inventory where
+  type Storage Inventory = Map Inventory
 
 makeWorld
   "World"
@@ -188,14 +183,11 @@ makeWorld
     ''Hovered,
     ''Signal,
     ''Scene,
-    ''Text,
-    ''OnClick,
-    ''ScreenPosition,
-    ''ScreenSize,
     ''Camera,
     ''Timer,
     ''Station,
-    ''Action
+    ''Action,
+    ''Seed,
+    ''GoPast,
+    ''Inventory
   ]
-
-type Button = (ScreenPosition, ScreenSize, OnClick)

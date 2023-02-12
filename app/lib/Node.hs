@@ -17,16 +17,47 @@ import qualified Entity
 import Extra hiding (anyM)
 import qualified GridPosition
 import Linear
+import Random
 import Screen
 import Types
+
+isStation :: GridPosition -> System World Bool
+isStation (GridPosition (V2 x y)) = do
+  Seed seed <- get global
+  let r = randomDoubleField seed (x `div` 5, y `div` 2)
+  return $ r < 0.008
 
 at :: GridPosition -> System World Entity
 at pos = do
   entitiesAtNodePos <- withReactive $ ordLookup pos
   case entitiesAtNodePos of
-    [] -> newEntity (Node, Empty, pos)
+    [] -> do
+      station <- isStation pos
+      if station
+        then do
+          node <- newEntity (Node, Empty, pos, Station)
+          getNeighbouringStationNodes pos >>= \case
+            [] -> error "One station"
+            [n] -> node $= DeadEnd n
+            [n, n'] -> node $= Through n n'
+            _ -> error "Many stations"
+          return node
+        else newEntity (Node, Empty, pos)
     [e] -> return e
     _ : _ -> error "Very many entities"
+
+getNeighbouringStationNodes :: GridPosition -> System World [Entity]
+getNeighbouringStationNodes (GridPosition (V2 x y)) = do
+  let nodeLeftPos = GridPosition (V2 (x - 1) y)
+  let nodeRightPos = GridPosition (V2 (x + 1) y)
+  leftStation <- isStation nodeLeftPos
+  rightStation <- isStation nodeRightPos
+  let ret
+        | leftStation && rightStation = [nodeLeftPos, nodeRightPos]
+        | leftStation = [nodeLeftPos]
+        | rightStation = [nodeRightPos]
+        | otherwise = []
+  mapM at ret
 
 connect :: Entity -> Entity -> System World ()
 connect node node' = do

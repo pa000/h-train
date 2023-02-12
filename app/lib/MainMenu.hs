@@ -10,19 +10,19 @@ import qualified Raylib.Types as RL
 import Types
 import qualified UI
 
-init :: System World ()
-init = do
-  initTitle
-  initButtons
+runUI :: System World ()
+runUI = do
+  addTitle
+  addButtons
 
-initButtons :: System World ()
-initButtons = do
+addButtons :: System World ()
+addButtons = do
   h <- liftIO RL.getScreenHeight
   w <- liftIO RL.getScreenWidth
-  UI.addButton "play" (w `div` 2) (h `div` 2) 35 RL.white StartGame
+  UI.addButton "play" (w `div` 2) (h `div` 2) 35 RL.white (set global StartGame)
 
-initTitle :: System World ()
-initTitle = do
+addTitle :: System World ()
+addTitle = do
   h <- liftIO RL.getScreenHeight
   w <- liftIO RL.getScreenWidth
   UI.addText "h-train" (w `div` 2) (h `div` 3) 70 RL.white
