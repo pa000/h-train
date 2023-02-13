@@ -229,9 +229,6 @@ makeSector :: Entity -> Entity -> System World ()
 makeSector startNode endNode = do
   nodesInBetween <- Node.getBetween startNode endNode
 
-  -- whenM (Node.isEmpty startNode) $ do
-  --   _ <- makeTrain startNode (head nodesInBetween)
-  --   return ()
   foldM_ makeTrack startNode nodesInBetween
   where
     makeTrack :: Entity -> Entity -> System World Entity

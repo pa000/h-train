@@ -45,15 +45,12 @@ hashSeed userSeed =
 randomDoubleField :: MRGen -> (Int, Int) -> Double
 randomDoubleField userSeed (x, y) =
   let k = 1 -- number of needed random values per plane point
-  --   g0 = mkMRGen userSeed
       g1 = ranSeek userSeed (fromIntegral (k * cantor (x, y)))
    in fst (random g1)
 
--- limited to first quadrant, x >= 0 and y >= 0:
 cantor1 :: Int -> Int -> Int
 cantor1 x y = y + (let s = x + y in div (s * (s + 1)) 2)
 
--- for all 4 quadrants:
 cantor :: (Int, Int) -> Int
 cantor (x, y) =
   let quadrant

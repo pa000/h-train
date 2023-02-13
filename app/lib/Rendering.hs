@@ -106,7 +106,8 @@ renderVisibleStations = do
       whenM (Entity.hasStation node) $ do
         whenM (Node.getMiddleStationNode node >>= \m -> return $ m == node) $ do
           n <- Node.getStationPassengerCount node
-          let Vector2 (CFloat sx) (CFloat sy) = getScreenPosF $ getCountPos (V2 x y)
+          let Vector2 (CFloat sx) (CFloat sy) =
+                getScreenPosF $ getCountPos (V2 x y)
           liftIO $ RL.drawText (show n) (fromEnum sx) (fromEnum sy) 10 RL.white
         nodeLeft <- Node.at (GridPosition (V2 (x - 1) y))
         nodeRight <- Node.at (GridPosition (V2 (x + 1) y))
@@ -256,5 +257,3 @@ renderSignal (Signal green towards, GridPosition signalPos) = do
       (getScreenPosF $ Linear.angle (angle + 2 * pi / 3) ^* 0.4 ^+^ toFloatVector signalPos)
       (getScreenPosF $ Linear.angle angle ^* 0.4 ^+^ toFloatVector signalPos)
       color
-
--- liftIO $ RL.drawCircleSector (getScreenPosF $ Linear.angle angle ^* 0.4 ^+^ toFloatVector signalPos) 30 (- angle - 120) (- angle - 60) 10 RL.white

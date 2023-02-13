@@ -188,24 +188,7 @@ markSectorBusy from to = do
             )
 
 markSectorFree :: Entity -> Entity -> System World ()
-markSectorFree from to = return ()
-
--- mapSector Entity.clearBusy p from to
--- where
---   p from curr = do
---     notM (Entity.isBusy curr)
---       ||^ ( Entity.getNodeType curr >>= \case
---               Through _ _ -> do
---                 getNext from curr >>= \case
---                   Nothing -> error ""
---                   Just opposite -> do
---                     signalTowards <- Entity.hasSignalTowards opposite curr
---                     if signalTowards
---                       then return True
---                       else return False
---               Junction _ _ -> return True
---               _ -> return False
---           )
+markSectorFree _ _ = return ()
 
 allDirections :: [Direction]
 allDirections =
@@ -222,7 +205,8 @@ getDestructibleFrom startEntity =
 getReachableFromInDir :: Entity -> Direction -> System World [Entity]
 getReachableFromInDir startNode dir = do
   nodesInDir <- getVisibleFromInDir startNode dir
-  (nodesInBetween, nodesLeft) <- spanM (isConnectionLegalAndNodeEmpty startNode) nodesInDir
+  (nodesInBetween, nodesLeft) <-
+    spanM (isConnectionLegalAndNodeEmpty startNode) nodesInDir
   reachableNodes <- do
     case nodesLeft of
       [] -> return nodesInBetween
@@ -249,7 +233,8 @@ isEdgeOfStation node = do
 getDestructibleFromInDir :: Entity -> Direction -> System World [Entity]
 getDestructibleFromInDir startNode dir = do
   nodesInDir <- getVisibleFromInDir startNode dir
-  (_, nodesInBetween, _) <- foldM isConnectedAndNotStation (startNode, [], True) nodesInDir
+  (_, nodesInBetween, _) <-
+    foldM isConnectedAndNotStation (startNode, [], True) nodesInDir
   return nodesInBetween
   where
     isConnectedAndNotStation (prevNode, xs, continuous) node = do

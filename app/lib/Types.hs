@@ -101,7 +101,13 @@ newtype CoupledTo = CoupledTo Entity
 instance Component CoupledTo where
   type Storage CoupledTo = Map CoupledTo
 
-data State = None | PlacingTrack | PlacingSignal | PlacingTrain | RemovingTrack | RemovingSignal
+data State
+  = None
+  | PlacingTrack
+  | PlacingSignal
+  | PlacingTrain
+  | RemovingTrack
+  | RemovingSignal
 
 instance Component State where
   type Storage State = Unique State
