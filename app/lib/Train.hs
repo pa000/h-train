@@ -5,31 +5,39 @@
 module Train where
 
 import Apecs
-import Apecs.System
 import Control.Monad
-import Control.Monad.Extra (notM)
-import Data.Foldable
-import Data.List ((\\))
+import Control.Monad.Extra (ifM, notM, whenM, (&&^), (||^))
 import qualified Entity
-import Extra
 import Linear (V2)
 import qualified Node
 import qualified Position
 import qualified Raylib as RL
+import Screen (getScreenPosF)
 import Types
 import Prelude hiding (tail)
 
 acceleration :: Float
 acceleration = 0.2
 
-makeTrain :: Entity -> Entity -> System World Entity
-makeTrain from to = do
+makeGhost :: System World Entity
+makeGhost = do
   car1 <- newEntity Train
   car2 <- newEntity (Train, CoupledTo car1)
   car3 <- newEntity (Train, CoupledTo car2)
   car4 <- newEntity (Train, CoupledTo car3)
-  l <- getTrainLength car4
-  newEntity (Train, Position from to (- (l + 0.55)), Speed 1, CoupledTo car4)
+  newEntity (Train, Ghost, CoupledTo car4, Passengers 0)
+
+placeAt :: Entity -> Entity -> Entity -> System World Bool
+placeAt train from to = do
+  good <- Node.checkRoute from to
+  if not good
+    then return False
+    else do
+      train $= (Position from to 0, Speed 0, Not @Ghost)
+      return True
+
+placeGhostAt :: Entity -> Entity -> Entity -> System World ()
+placeGhostAt train from to = train $= Position from to 0
 
 updateTrains :: System World ()
 updateTrains = do
@@ -50,8 +58,8 @@ removeTrainOutOfTrack pos@(Position from curr progress) = do
       return $ Right Not
     else return $ Left ()
 
-updateTrainSpeed :: (Train, Position, Entity) -> System World Speed
-updateTrainSpeed (Train, _, train) = do
+updateTrainSpeed :: (Train, Speed, Position, Entity) -> System World Speed
+updateTrainSpeed (Train, _, _, train) = do
   ifM (shouldBrake train) (brake train) (accelerate train)
 
 brake :: Entity -> System World Speed
@@ -70,29 +78,42 @@ accelerate train = do
 
 handleStoppedTrain :: Entity -> System World ()
 handleStoppedTrain train = do
-  pos <- calculateTrainFrontPosition train
+  pos@(Position from _ _) <- calculateTrainFrontPosition train
   stoppedAtStation <- shouldBrakeBecauseOfStation pos &&^ notForced train
   hasTimer <- Entity.hasTimer train
+
   when (stoppedAtStation && not hasTimer) $ do
+    Passengers p <- get train
+    train $= Passengers 0
+    global $~ \(Score s) -> Score $ s + p
+    when (p > 0) $ do
+      posOnGrid <- Position.onGrid pos
+      showFloatingText ("+" ++ show p) (ScreenPosition $ getScreenPosF posOnGrid)
     train $= Timer 5
+  when stoppedAtStation $ do
+    n <- Node.transferPassengersFromStation from
+    train $~ \(Passengers p) -> Passengers (p + n)
   stoppedAtDeadEnd <- shouldBrakeBecauseOfDeadEnd pos
   when (stoppedAtDeadEnd && not stoppedAtStation) $ do
     reverseTrain train
+
+showFloatingText :: String -> ScreenPosition -> System World ()
+showFloatingText text pos = do
+  newEntity_ (Text text, Timer 2, pos)
 
 reverseTrain :: Entity -> System World ()
 reverseTrain train = do
   Position from curr progress <- calculateTrainFrontPosition train
   dist <- Node.distance curr from
   train $= Position curr from (dist - progress)
-  train $= Not @GoPast
 
 handleExpiredTimer :: Entity -> System World ()
 handleExpiredTimer train = do
   train $= Not @Timer
 
-  pos@(Position _ curr _) <- calculateTrainFrontPosition train
+  pos <- calculateTrainFrontPosition train
   whenM (shouldBrakeBecauseOfStation pos) $ do
-    train $= GoPast curr
+    train $= GoPast
 
 shouldBrake :: Entity -> System World Bool
 shouldBrake train = do
@@ -134,19 +155,19 @@ shouldBrakeBecauseOfStation (Position from curr _) = do
 moveTrain :: (Train, Position, Speed) -> System World Position
 moveTrain (Train, pos@(Position from _ _), Speed speed) = do
   dt <- liftIO RL.getFrameTime
-  pos'@(Position from' _ _) <- Position.moveForward (speed * dt) pos
+  pos'@(Position from' curr' _) <- Position.moveForward (speed * dt) pos
   when (from /= from') $
     leaveTrack pos
+  Node.markSectorBusy from' curr'
   return pos'
 
 calculateTrainFrontPosition :: Entity -> System World Position
 calculateTrainFrontPosition train = do
   trainLength <- getTrainLength train
   startPos <- Entity.getTrainPosition train
-  frontPos@(Position from _ _) <- Position.moveForward trainLength startPos
-  whenM (notM $ notForced train) $ do
-    GoPast node <- get train
-    when (from == node) $
+  frontPos@(Position from curr _) <- Position.moveForward trainLength startPos
+  whenM (notM $ notForced train) $
+    whenM (Entity.hasStation from &&^ notM (Entity.hasStation curr)) $
       train $= Not @GoPast
   enterTrack frontPos
   return frontPos

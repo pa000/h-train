@@ -7,18 +7,18 @@ module Node where
 import Apecs
 import Apecs.Experimental.Reactive
 import Control.Monad
-import Control.Monad.Extra (concatMapM, (&&^))
+import Control.Monad.Extra (concatMapM, notM, unlessM, whenM, (&&^), (||^))
 import Control.Monad.ListM
 import Data.Foldable
 import Data.List ((\\))
 import Data.Maybe
 import qualified Direction
 import qualified Entity
-import Extra hiding (anyM)
 import qualified GridPosition
 import Linear
 import Random
 import Screen
+import qualified State
 import Types
 
 isStation :: GridPosition -> System World Bool
@@ -26,6 +26,57 @@ isStation (GridPosition (V2 x y)) = do
   Seed seed <- get global
   let r = randomDoubleField seed (x `div` 5, y `div` 2)
   return $ r < 0.008
+
+transferPassengersFromStationNode :: Entity -> System World Int
+transferPassengersFromStationNode node = do
+  Passengers n <- get node
+  node $= Passengers 0
+  return n
+
+transferPassengersFromStation :: Entity -> System World Int
+transferPassengersFromStation node = do
+  stationNodes <- getStationNodes node
+  counts <- mapM transferPassengersFromStationNode stationNodes
+  return $ sum counts
+
+getStationPassengerCount :: Entity -> System World Int
+getStationPassengerCount node = do
+  stationNodes <- getStationNodes node
+  counts <- mapM (get >=> (\(Passengers n) -> return n)) stationNodes
+  return $ sum counts
+
+getMiddleStationNode :: Entity -> System World Entity
+getMiddleStationNode node = do
+  stationNodes <- getStationNodes node
+  sorted <- sortByM compareNodes stationNodes
+  return $ sorted !! 2
+  where
+    compareNodes n n' = do
+      (GridPosition (V2 x _)) <- Entity.getPosition n
+      (GridPosition (V2 x' _)) <- Entity.getPosition n'
+      return $ compare x x'
+
+getStationNodes :: Entity -> System World [Entity]
+getStationNodes node = do
+  station <- Entity.hasStation node
+  if station
+    then do
+      neighbours <- getNeighbours node
+      stationNodes <- concatMapM (getStationNodesFrom node) neighbours
+      return $ node : stationNodes
+    else return []
+
+getStationNodesFrom :: Entity -> Entity -> System World [Entity]
+getStationNodesFrom from node = do
+  station <- Entity.hasStation node
+  if station
+    then do
+      getNext from node >>= \case
+        Nothing -> return [node]
+        Just next -> do
+          rest <- getStationNodesFrom node next
+          return $ node : rest
+    else return []
 
 at :: GridPosition -> System World Entity
 at pos = do
@@ -35,7 +86,7 @@ at pos = do
       station <- isStation pos
       if station
         then do
-          node <- newEntity (Node, Empty, pos, Station)
+          node <- newEntity (Node, Empty, pos, Station, Passengers 0)
           getNeighbouringStationNodes pos >>= \case
             [] -> error "One station"
             [n] -> node $= DeadEnd n
@@ -63,6 +114,8 @@ connect :: Entity -> Entity -> System World ()
 connect node node' = do
   node' $~ addNeighbour node
   node $~ addNeighbour node'
+  whenM (Entity.hasStation node) $ node $= Connected
+  whenM (Entity.hasStation node') $ node' $= Connected
 
 disconnect :: Entity -> Entity -> System World ()
 disconnect node node' = do
@@ -109,31 +162,50 @@ markReachableFrom startEntity = do
 
 markSectorBusy :: Entity -> Entity -> System World ()
 markSectorBusy from to = do
-  sectorNodes <- getSector p from to
-  mapM_ Entity.setBusy sectorNodes
+  Entity.setBusy from
+  Entity.setBusy to
+  getNext from to >>= \case
+    Nothing -> return ()
+    Just next ->
+      mapSector Entity.setBusy p to next
+  getNext to from >>= \case
+    Nothing -> return ()
+    Just opposite ->
+      mapSector Entity.setBusy p' from opposite
   where
     p from curr = do
-      getNext curr from >>= \case
-        Nothing -> return False
-        Just opposite -> Entity.hasSignalTowards opposite from
+      Entity.isBusy curr
+        ||^ ( getNext curr from >>= \case
+                Nothing -> return False
+                Just opposite -> Entity.hasSignalTowards opposite from
+            )
+    p' from curr = do
+      Entity.isBusy curr
+        ||^ Entity.hasSignalTowards curr from
+        ||^ ( Entity.getNodeType curr >>= \case
+                Junction _ _ -> return True
+                _ -> return False
+            )
 
 markSectorFree :: Entity -> Entity -> System World ()
-markSectorFree from to = do
-  sectorNodes <- getSector p from to
-  mapM_ Entity.clearBusy sectorNodes
-  where
-    p from curr = do
-      Entity.getNodeType curr >>= \case
-        Through _ _ -> do
-          getNext from curr >>= \case
-            Nothing -> error ""
-            Just opposite -> do
-              signalTowards <- Entity.hasSignalTowards opposite curr
-              if signalTowards
-                then return True
-                else return False
-        Junction _ _ -> return True
-        _ -> return False
+markSectorFree from to = return ()
+
+-- mapSector Entity.clearBusy p from to
+-- where
+--   p from curr = do
+--     notM (Entity.isBusy curr)
+--       ||^ ( Entity.getNodeType curr >>= \case
+--               Through _ _ -> do
+--                 getNext from curr >>= \case
+--                   Nothing -> error ""
+--                   Just opposite -> do
+--                     signalTowards <- Entity.hasSignalTowards opposite curr
+--                     if signalTowards
+--                       then return True
+--                       else return False
+--               Junction _ _ -> return True
+--               _ -> return False
+--           )
 
 allDirections :: [Direction]
 allDirections =
@@ -151,13 +223,16 @@ getReachableFromInDir :: Entity -> Direction -> System World [Entity]
 getReachableFromInDir startNode dir = do
   nodesInDir <- getVisibleFromInDir startNode dir
   (nodesInBetween, nodesLeft) <- spanM (isConnectionLegalAndNodeEmpty startNode) nodesInDir
-  case nodesLeft of
-    [] -> return nodesInBetween
-    nodeLeft : _ -> do
-      legal <- isConnectionLegal startNode nodeLeft
-      if legal
-        then return $ nodeLeft : nodesInBetween
-        else return nodesInBetween
+  reachableNodes <- do
+    case nodesLeft of
+      [] -> return nodesInBetween
+      nodeLeft : _ -> do
+        legal <- isConnectionLegal startNode nodeLeft
+        if legal
+          then return $ nodesInBetween ++ [nodeLeft]
+          else return nodesInBetween
+  inventory <- get global
+  return $ take (tracks inventory) reachableNodes
 
 isThrough :: Entity -> System World Bool
 isThrough node =
@@ -165,29 +240,37 @@ isThrough node =
     Through _ _ -> return True
     _ -> return False
 
+isEdgeOfStation :: Entity -> System World Bool
+isEdgeOfStation node = do
+  pos <- Entity.getPosition node
+  stationNeighbours <- getNeighbouringStationNodes pos
+  return $ length stationNeighbours == 1
+
 getDestructibleFromInDir :: Entity -> Direction -> System World [Entity]
 getDestructibleFromInDir startNode dir = do
   nodesInDir <- getVisibleFromInDir startNode dir
-  (_, nodesInBetween, _) <- foldM isConnected (startNode, [], True) nodesInDir
+  (_, nodesInBetween, _) <- foldM isConnectedAndNotStation (startNode, [], True) nodesInDir
   return nodesInBetween
   where
-    isConnected (prevNode, xs, continuous) node = do
+    isConnectedAndNotStation (prevNode, xs, continuous) node = do
       neighbours <- getNeighbours prevNode
-      if node `elem` neighbours && continuous
+      notStation <- notM $ Entity.hasStation node
+      if node `elem` neighbours && notStation && continuous
         then return (node, xs ++ [node], True)
         else return (node, xs, False)
 
-getSector :: (Entity -> Entity -> System World Bool) -> Entity -> Entity -> System World [Entity]
-getSector p start to = do
+mapSector :: (Entity -> System World ()) -> (Entity -> Entity -> System World Bool) -> Entity -> Entity -> System World ()
+mapSector f p start to = do
   true <- p start to
+  f start
   if true
-    then return [start]
+    then return ()
     else do
       getNext start to >>= \case
-        Nothing -> return [start, to]
-        Just next -> do
-          rest <- getSector p to next
-          return $ start : rest
+        Nothing -> do
+          f start
+          f to
+        Just next -> mapSector f p to next
 
 getVisibleFromInDir :: Entity -> Direction -> System World [Entity]
 getVisibleFromInDir _ (V2 0 0) = return []
@@ -246,7 +329,11 @@ isDirectedConnectionToNonEmptyNodeLegal startNode endNode = do
   endNeighbours <- getNeighbours endNode
   if startNode `elem` endNeighbours || length endNeighbours >= 4
     then return False
-    else anyM (isTurnLegal startNode endNode) endNeighbours
+    else
+      (isEdgeOfStation endNode ||^ notM (Entity.hasStation endNode))
+        &&^ anyM
+          (isTurnLegal startNode endNode)
+          endNeighbours
 
 isTurnLegal :: Entity -> Entity -> Entity -> System World Bool
 isTurnLegal startNode middleNode endNode = do
@@ -277,8 +364,8 @@ distance node node' = do
 placeSignal :: Entity -> System World ()
 placeSignal node = do
   nodeType <- Entity.getNodeType node
-  state <- get global
-  case (nodeType, destructionMode state) of
+  removingSignal <- State.isRemovingSignal
+  case (nodeType, removingSignal) of
     (Through neigh _, False) -> do
       hasSignal <- Entity.hasSignal node
       if hasSignal
@@ -296,7 +383,11 @@ turnSwitch node = do
   case nodeType of
     Junction (switch, switch') neighbours -> do
       legalTurns <- filterM (isTurnLegal switch' node) neighbours
-      let nextLegalSwitch = head $ tail $ dropWhile (/= switch) (legalTurns ++ legalTurns)
+      let nextLegalSwitch =
+            ( case dropWhile (/= switch) (legalTurns ++ legalTurns) of
+                [] -> head legalTurns
+                xs -> head $ tail xs
+            )
       node $= Junction (switch', nextLegalSwitch) neighbours
       when (nextLegalSwitch == switch) $ turnSwitch node
     _ -> return ()
@@ -306,14 +397,43 @@ toggleSignal node = do
   hasSignal <- Entity.hasSignal node
   when hasSignal $ do
     Signal green towards <- Entity.getSignal node
-    node $= Signal (not green) towards
+    if green
+      then node $= Signal (not green) towards
+      else do
+        getNext towards node >>= \case
+          Nothing -> node $= Signal (not green) towards
+          Just next -> do
+            whenM (checkRoute node next) $
+              node $= Signal (not green) towards
+
+checkRoute :: Entity -> Entity -> System World Bool
+checkRoute from to = do
+  busy <- Entity.isBusy to
+  signal <- Entity.hasSignal to &&^ Entity.hasSignalTowards from to
+  if busy
+    then return False
+    else
+      if signal
+        then return True
+        else
+          getNext from to >>= \case
+            Nothing -> return True
+            Just next ->
+              Entity.getNodeType next >>= \case
+                Junction (n, n') _ ->
+                  if n == to || n' == to
+                    then checkRoute to next
+                    else return False
+                _ -> checkRoute to next
 
 handleClick :: Entity -> System World ()
 handleClick node = do
   nodeType <- Entity.getNodeType node
   case nodeType of
     Through _ _ -> toggleSignal node
-    Junction _ _ -> turnSwitch node
+    Junction _ _ -> do
+      unlessM (Entity.isBusy node) $
+        turnSwitch node
     _ -> return ()
 
 getBetween :: Entity -> Entity -> System World [Entity]

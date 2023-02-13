@@ -19,10 +19,10 @@ addButtons :: System World ()
 addButtons = do
   h <- liftIO RL.getScreenHeight
   w <- liftIO RL.getScreenWidth
-  UI.addButton "play" (w `div` 2) (h `div` 2) 35 RL.white (set global StartGame)
+  UI.addButton True "play" (w `div` 2) (h `div` 2) 35 RL.white (set global StartGame) (return ())
 
 addTitle :: System World ()
 addTitle = do
   h <- liftIO RL.getScreenHeight
   w <- liftIO RL.getScreenWidth
-  UI.addText "h-train" (w `div` 2) (h `div` 3) 70 RL.white
+  UI.addText True "h-train" (w `div` 2) (h `div` 3) 70 RL.white

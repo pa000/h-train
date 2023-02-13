@@ -13,7 +13,6 @@ import qualified Node
 import qualified Raylib as RL
 import Raylib.Types (Vector2 (Vector2))
 import qualified Raylib.Types as RL
-import qualified State
 import Types
 
 handleInput :: System World ()
@@ -38,10 +37,10 @@ handleMouseButtonPresses :: System World ()
 handleMouseButtonPresses = do
   leftButton <- liftIO $ RL.isMouseButtonPressed RL.MouseButtonLeft
   when leftButton handleLeftMouseButtonPress
-  leftButton <- liftIO $ RL.isMouseButtonDown RL.MouseButtonRight
-  when leftButton handleMiddleMouseButtonDown
-  rightButton <- liftIO $ RL.isMouseButtonPressed RL.MouseButtonRight
-  when rightButton handleRightMouseButtonPress
+  rightButtonDown <- liftIO $ RL.isMouseButtonDown RL.MouseButtonRight
+  when rightButtonDown handleMiddleMouseButtonDown
+  rightButtonPressed <- liftIO $ RL.isMouseButtonPressed RL.MouseButtonRight
+  when rightButtonPressed handleRightMouseButtonPress
   middleButton <- liftIO $ RL.isMouseButtonDown RL.MouseButtonMiddle
   when middleButton handleMiddleMouseButtonDown
   handleWheelMove

@@ -1,6 +1,5 @@
 {-# OPTIONS -Wall #-}
 {-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE TypeApplications #-}
 
 module Rendering (render) where
 
@@ -8,7 +7,6 @@ import Apecs
 import Constants
 import Control.Monad
 import Control.Monad.Extra
-import Data.Hashable
 import Data.Maybe
 import qualified Entity
 import Foreign.C
@@ -20,13 +18,13 @@ import Linear.V2 (V2 (..))
 import qualified MainMenu
 import qualified Node
 import Position (toFloatVector)
-import Random (randomDoubleField)
 import qualified Raylib as RL
 import qualified Raylib.Colors as RL
 import Raylib.Types
 import qualified Raylib.Types as RL
 import qualified Rendering.Train as Train
 import Screen
+import qualified State
 import Types
 import Prelude hiding (last)
 
@@ -53,14 +51,15 @@ runUI =
 
 renderGame :: System World ()
 renderGame = do
-  state <- get global
+  buildingMode <- State.isBuildingMode
+  destructionMode <- State.isDestructionMode
   Camera camera <- get global
   liftIO $ do
-    when (buildingMode state && destructionMode state) $
+    when destructionMode $
       RL.clearBackground (RL.Color (CUChar 64) (CUChar 14) (CUChar 10) (CUChar 255))
     RL.beginMode2D camera
 
-  when (buildingMode state) $ do
+  when buildingMode $ do
     renderHoveredBlock
     selectedNode <- Entity.getSelected
     maybe (return ()) renderNode selectedNode
@@ -73,9 +72,19 @@ renderGame = do
 
   renderVisibleStations
 
+  renderTexts
+
   liftIO $ RL.drawCircle 0 0 5 RL.purple
 
   liftIO RL.endMode2D
+
+renderTexts :: System World ()
+renderTexts = cmapM_ renderText
+
+renderText :: (Text, Timer, ScreenPosition) -> System World ()
+renderText (Text text, Timer t, pos) = do
+  let ScreenPosition (Vector2 (CFloat x) (CFloat y)) = pos
+  liftIO $ RL.drawText text (fromEnum x) (fromEnum $ y - (2 - t) * cellSize) 10 RL.green
 
 renderVisibleStations :: System World ()
 renderVisibleStations = do
@@ -95,6 +104,10 @@ renderVisibleStations = do
     renderStation y x = do
       node <- Node.at (GridPosition (V2 x y))
       whenM (Entity.hasStation node) $ do
+        whenM (Node.getMiddleStationNode node >>= \m -> return $ m == node) $ do
+          n <- Node.getStationPassengerCount node
+          let Vector2 (CFloat sx) (CFloat sy) = getScreenPosF $ getCountPos (V2 x y)
+          liftIO $ RL.drawText (show n) (fromEnum sx) (fromEnum sy) 10 RL.white
         nodeLeft <- Node.at (GridPosition (V2 (x - 1) y))
         nodeRight <- Node.at (GridPosition (V2 (x + 1) y))
         whenM (Entity.hasStation nodeLeft) $ do
@@ -126,6 +139,9 @@ renderVisibleStations = do
         getPlatformEndPos (V2 x y)
           | even y = V2 (fromIntegral x) (fromIntegral y - 0.5)
           | otherwise = V2 (fromIntegral x) (fromIntegral y + 0.5)
+        getCountPos (V2 x y)
+          | even y = V2 (fromIntegral x) (fromIntegral y - 0.6)
+          | otherwise = V2 (fromIntegral x) (fromIntegral y + 0.3)
 
 renderNode :: Entity -> System World ()
 renderNode nodeEntity = do
@@ -140,24 +156,19 @@ renderNode nodeEntity = do
 
 renderHoveredBlock :: System World ()
 renderHoveredBlock = do
-  maybeHoveredNode <- Entity.getHovered
-  case maybeHoveredNode of
+  Entity.getHovered >>= \case
     Nothing -> return ()
     Just hoveredNode -> do
-      GridPosition (V2 hoveredBlockX hoveredBlockY) <-
+      hovPos@(GridPosition (V2 hoveredBlockX hoveredBlockY)) <-
         Entity.getPosition hoveredNode
-      state <- get global
-      liftIO $ do
-        let x = hoveredBlockX * cellSize + cellSize `div` 2
-        let y = hoveredBlockY * cellSize + cellSize `div` 2
-        RL.drawRectangle x y cellSize cellSize RL.gray
-        when (placingSignal state) $ do
-          RL.drawRectangle
-            (x + cellSize `div` 4)
-            (y + cellSize `div` 4)
-            (cellSize `div` 2)
-            (cellSize `div` 2)
-            RL.green
+      let x = hoveredBlockX * cellSize + cellSize `div` 2
+      let y = hoveredBlockY * cellSize + cellSize `div` 2
+      liftIO $ RL.drawRectangle x y cellSize cellSize RL.gray
+      whenM (State.isPlacingSignal &&^ notM (Entity.hasSignal hoveredNode)) $ do
+        Node.getNeighbours hoveredNode >>= \case
+          [] -> return ()
+          neighbour : _ ->
+            renderSignal (Signal False neighbour, hovPos)
 
 renderTracks :: System World ()
 renderTracks = cmapM_ renderConnection

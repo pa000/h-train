@@ -8,7 +8,14 @@
 {-# LANGUAGE TypeFamilies #-}
 
 module Types
-  ( Inventory (..),
+  ( Ghost (..),
+    Score (..),
+    LastScore (..),
+    Connected (..),
+    ScreenPosition (..),
+    Passengers (..),
+    Text (..),
+    Inventory (..),
     GoPast (..),
     Seed (..),
     Train (..),
@@ -41,6 +48,7 @@ import Apecs.Experimental.Reactive
 import Data.Ix
 import Linear.V2
 import Random (MRGen)
+import Raylib.Types hiding (Camera)
 import qualified Raylib.Types as RL hiding (Camera)
 
 newtype GridPosition = GridPosition (V2 Int)
@@ -93,14 +101,25 @@ newtype CoupledTo = CoupledTo Entity
 instance Component CoupledTo where
   type Storage CoupledTo = Map CoupledTo
 
-data State = State
-  { buildingMode :: Bool,
-    destructionMode :: Bool,
-    placingSignal :: Bool
-  }
+data State = None | PlacingTrack | PlacingSignal | PlacingTrain | RemovingTrack | RemovingSignal
 
 instance Component State where
   type Storage State = Unique State
+
+data Ghost = Ghost
+
+instance Component Ghost where
+  type Storage Ghost = Unique Ghost
+
+data Connected = Connected
+
+instance Component Connected where
+  type Storage Connected = Map Connected
+
+newtype Passengers = Passengers Int
+
+instance Component Passengers where
+  type Storage Passengers = Map Passengers
 
 type Direction = V2 Int
 
@@ -139,7 +158,7 @@ data Scene = MainMenu | Pause | Game
 instance Component Scene where
   type Storage Scene = Unique Scene
 
-data Action = StartGame | ToggleBuildMode | ToggleBuildSignal | ToggleDestructionMode
+data Action = StartGame | ToggleBuildMode | ToggleBuildSignal | ToggleDestructionMode | ToggleBuildTrain | ToggleRemoveSignal
 
 instance Component Action where
   type Storage Action = Unique Action
@@ -154,23 +173,46 @@ newtype Seed = Seed MRGen
 instance Component Seed where
   type Storage Seed = Unique Seed
 
-newtype GoPast = GoPast Entity
+data GoPast = GoPast
 
 instance Component GoPast where
   type Storage GoPast = Map GoPast
 
-data Item = ITrack | ITrain | IPassenger
-
-newtype Inventory = Inventory [(Item, Int)]
+data Inventory = Inventory
+  { tracks :: Int,
+    trains :: Int
+  }
 
 instance Component Inventory where
   type Storage Inventory = Map Inventory
+
+newtype Score = Score Int
+
+instance Component Score where
+  type Storage Score = Unique Score
+
+newtype LastScore = LastScore Int
+
+instance Component LastScore where
+  type Storage LastScore = Unique LastScore
+
+newtype Text = Text String
+
+instance Component Text where
+  type Storage Text = Map Text
+
+newtype ScreenPosition = ScreenPosition Vector2
+
+instance Component ScreenPosition where
+  type Storage ScreenPosition = Map ScreenPosition
 
 makeWorld
   "World"
   [ ''CoupledTo,
     ''Position,
     ''Speed,
+    ''Connected,
+    ''Passengers,
     ''Busy,
     ''State,
     ''Reachable,
@@ -189,5 +231,10 @@ makeWorld
     ''Action,
     ''Seed,
     ''GoPast,
-    ''Inventory
+    ''Inventory,
+    ''Ghost,
+    ''Score,
+    ''LastScore,
+    ''ScreenPosition,
+    ''Text
   ]
