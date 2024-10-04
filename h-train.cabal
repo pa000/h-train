@@ -27,7 +27,7 @@ library
     build-depends:
         base,
         containers,
-        h-raylib,
+        h-raylib==4.5.0.12,
         apecs,
         linear,
         extra,
@@ -71,7 +71,7 @@ executable h-train
     -- LANGUAGE extensions used by modules in this package.
     -- other-extensions:
     build-depends:
-        base ^>=4.13.0.0,
+        base <4.17.0.0,
         h-train
     hs-source-dirs:   app
     default-language: Haskell2010
